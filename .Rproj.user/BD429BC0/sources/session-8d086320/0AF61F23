@@ -1,0 +1,26 @@
+{
+    "id": "0AF61F23",
+    "path": "~/Documents/Repos/orca-api/parmesan/inputs.yaml",
+    "project_path": "parmesan/inputs.yaml",
+    "type": "yaml",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1689979957026.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "86,30",
+        "scrollLine": "80"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1690815523,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1690815523738,
+    "read_only": false,
+    "read_only_alternatives": []
+}

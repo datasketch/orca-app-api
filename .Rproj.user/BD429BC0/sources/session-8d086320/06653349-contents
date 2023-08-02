@@ -1,0 +1,15 @@
+filtros:
+  label:
+  inputs:
+    - deptosId
+    - anioId
+    - establecimientoId
+    - apre_deptosId
+    - apre_anioId
+    - apre_cierreId
+    - apre_marcaId
+    - apre_claseId
+    - apre_numId
+
+    
+

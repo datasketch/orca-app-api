@@ -1,0 +1,14 @@
+name: orca-api
+title: orca-api
+username: camila
+account: camila
+server: services.datasketch.co
+hostUrl: https://services.datasketch.co/__api__
+appId: 23
+bundleId: 70
+url: https://services.datasketch.co/orca-api/
+when: 1690996246.47346
+lastSyncTime: 1690996246.47346
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: pkg-version.R

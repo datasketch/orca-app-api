@@ -1,0 +1,76 @@
+aggregation_data <- function (data, agg, group_var, to_agg,
+                              agg_name = NULL, percentage = FALSE,
+                              percentage_name = NULL,
+                              extra_col = FALSE, agg_extra = "sum") {
+  
+  if (is.null(data)) stop("The data object must be specified")
+  if (is.null(group_var)) stop("The pooling variable(s) must be specified.")
+  
+  class_data <- class(data)
+  ..percentage <- NULL
+  if ("fringe" %in% class_data) data <- data$data
+  
+  if (extra_col) {
+    
+    extra_data <- data |>
+      group_by(across(all_of(group_var))) |>
+      summarise(across(where(~ is.numeric(.x) | is.integer(.x)), ~ aggregation(agg_extra, .x), .names = "{.col}"),
+                across(where(~ is.factor(.x) | is.character(.x)), ~ paste_vector(.x), .names = "{.col}"))
+    
+  }
+  
+  if (agg == "count") {
+    result <- data |>
+      group_by(across(all_of(group_var))) |>
+      summarise(count = n())
+    if (percentage) {
+      result <- result |>
+        mutate(..percentage = (count / sum(count))*100)
+      if (!is.null(percentage_name)) {
+        result <- result |> rename(!!percentage_name := ..percentage)
+      }
+    }
+    if (!is.null(agg_name)) {
+      result <- result |> rename(!!agg_name := count)
+    }
+  } else {
+    result <- data |>
+      group_by(across(all_of(group_var))) |>
+      summarise(across(all_of(to_agg),
+                       ~ aggregation(agg, as.numeric(.x)),
+                       .names = ifelse(is.null(agg_name), "{.col}", "{agg_name}")))
+    
+    if (percentage) {
+      to_percentage <- to_agg
+      if (!is.null(agg_name)) to_percentage <- agg_name
+      if (is.null(percentage_name)) percentage_name <- paste0("..percentage", agg_name)
+      result <- result |>
+        mutate(across(all_of(to_percentage), ~ . / sum(.) * 100,
+                      .names = "{percentage_name}"))
+    }
+    
+  }
+  
+  if (extra_col) {
+    result <- result |> left_join(extra_data)
+  }
+  
+  result
+}
+
+
+aggregation <- function(aggregation, ...) {
+  if (is.null(aggregation) || is.na(aggregation)) {
+    stop("The aggregation type must be specified.")
+  }
+  
+  result <- do.call(aggregation, c(list(...), list(na.rm = TRUE)))
+  
+  if (is.na(result)) {
+    stop("The aggregation failed.")
+  }
+  
+  return(result)
+}
+
+

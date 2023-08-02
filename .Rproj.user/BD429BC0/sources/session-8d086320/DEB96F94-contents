@@ -1,0 +1,2073 @@
+webshot::install_phantomjs(force = FALSE)
+library(sing)
+library(shiny)
+library(hdbase)
+library(hdtable)
+library(dplyr)
+library(purrr)
+library(shinyWidgets)
+library(shinyinvoer)
+library(shinycustomloader)
+library(shinybusy)
+library(shinyjs)
+library(hgchmagic)
+library(reactable)
+library(dsmodules)
+library(geojsonlint)
+library(ltgeo)
+library(dsopts)
+library(stringi)
+
+source("read_params.R")
+source("text.R")
+# viz_conf <- jsonlite::read_json("hdbase/viz_conf.json")
+# detail_conf <- jsonlite::read_json("hdbase/detail.json")
+data_elec_polit <- readr::read_csv("moedb/extra/elecciones_partidos.csv")
+data_candidatos <- readr::read_csv("moedb/extra/elecciones_candidato.csv")
+index_conf <- jsonlite::read_json("moedb/index_conf.json")
+all_mun <- readr::read_csv("moedb/extra/all_mun.csv")
+ui <- fluidPage(
+  busy_start_up(
+    loader = tags$img(
+      src = "logos/loading_gris.gif",
+      width = 100
+    ),
+    mode = "manual",
+    color = "#435b69",
+    background = "#FFF"
+  ),
+  tags$head(
+    tags$link(rel = "stylesheet", type = "text/css", href = "app.min.css"),
+    tags$script(src="app.min.js")
+  ),
+  div(style = "display:flex;",
+      div(class = "layout-container",
+          div(class = "layout-panels",
+              div(class = "app-container",
+                  div(id = "filter-moe",
+                      class = "panel",
+                      style = "width: 350px;",
+                      div(id="moe-panel_head",
+                          class="panel-header",
+                          p(class="panel-header-title",
+                            "Filtros")
+                      ),
+                      div(class = "panel-body",
+                          div( #class = "panel-content",
+                            #actionButton("run_inputs", "Aplicar filtros"),
+                            uiOutput("moe_inputs")
+                          )
+                      )
+                  ),
+                  div(id = "viz-moe",
+                      class = "panel",
+                      style = "flex-grow: 1; min-width: 630px;",
+                      div(class = "panel-header",
+                          p(class="panel-header-title",
+                            "Visualización"),
+                          div(class = "head-viz",
+                              uiOutput("viz_icons"),
+                              uiOutput("opts_ptc"),
+                              uiOutput("down_data"),
+                              uiOutput("downloads")
+                          )
+                      ),
+                      div(class = "panel-body",
+                          div(class = "panel-content",
+                              uiOutput("viz_ui")#,
+
+                              #highchartOutput("hgch_chart")
+                              #verbatimTextOutput("test")
+                          )
+                      )
+                  ),
+                  div(id = "detail-moe",
+                      class = "panel",
+                      style = "width: 300px;",
+                      div(id="moe-panel_head",
+                          class="panel-header",
+                          p(class="panel-header-title",
+                            "Detalle")
+                      ),
+                      div(class = "panel-body",
+                          div(class = "panel-content",
+                              uiOutput("violencia_extra"),
+                              tableOutput("violencia_tabla"),
+                              uiOutput("summary")
+                          )
+                      ),
+                      div(class = "panel-footer",
+                          div(class = "footer-logos",
+                              img(src= 'logos/lg_enm.svg',
+                                  width = 70, height = 70),
+                              tags$a(
+                                href="https://www.datasketch.co", target="blank",
+                                img(src= 'logos/lg_ds.svg',
+                                    align = "left", width = 100, height = 70)),
+                              img(src= 'logos/lg_moe.svg',
+                                  width = 70, height = 60)
+                          )
+                      )
+                  )
+
+              )
+          )
+      )
+  )
+)
+
+
+#bd <- hdbase_read("hdbase/db/")
+
+
+server <- function(input, output, session) {
+
+
+  url_params <- list(dash = NULL)
+
+  url_par <- reactive({
+    shinyinvoer::url_params(url_params, session)
+  })
+
+  bd <-
+    isolate({
+      reactivePoll(1000,
+                   session,
+                   checkFunc = function() {
+                     df <- "moedb/db/"
+                     if (file.exists(df))
+                       file.info(df)$uid
+                     else
+                       shinyalert(title = "file",text = "Archivo no encontrado")
+                   },
+
+                   valueFunc = function() {
+                     load_data <- "data-prep.R"
+
+                     source(load_data)$value
+                   }
+      )
+    })
+
+
+  sing_values <- reactiveValues(
+    options_picker =  list(
+      `actions-box` = TRUE,
+      `deselect-all-text` = "Ninguno",
+      `select-all-text` = "Todos",
+      title = "Todos"
+    ),
+    viz_active = NULL,
+    mp_var_riesgo = NULL,
+    mp_var_circ = NULL,
+    mp_circ_opts = NULL,
+    mp_var_ind = FALSE,
+    mp_riesgo_annio_ind = TRUE,
+    mp_riesgo_annio_sel = NULL,
+    elecciones_municipios_annio_sel = NULL,
+    elecciones_municipios_annio_ind = TRUE,
+    eleccion_elec_selec = NULL,
+    eleccion_elec_mul = TRUE,
+    eleccion_elec_opts = NULL,
+    elec_part_dept = NULL,
+    elec_part_muni = NULL,
+    elec_part_annio_opts = NULL,
+    elec_part_annio_sel = NULL,
+    elec_part_annio_ind = TRUE,
+    elec_part_elec_opts = NULL,
+    elec_part_elec_selec = NULL,
+    elec_part_zona = NULL,
+    elec_part_partido = NULL,
+    elec_part_elec_mul = TRUE,
+    pilas_annio = NULL,
+    fin_elec = NULL,
+    censo_cruce_opts = NULL,
+    censo_annio_sel = NULL,
+    censo_annio_ind = FALSE,
+    grupos_ilegales_cruce_opts = NULL,
+    incri_annio_sel = NULL,
+    incri_annio_ind = FALSE,
+    part_annio_sel = NULL,
+    part_elec_sel = NULL,
+    part_gen_sel = c("Femenino", "Masculino"),
+    url_param_table = "mapa_riesgo"
+  )
+
+
+
+  data_filter <- reactive({
+    if (is.null(input$what_table_input)) return()
+    data_filter_sing(input, bd(), input_params)
+  })
+
+  observe({
+    if (is.null(data_filter()$data_filter)) return()
+    Sys.sleep(3)
+    remove_start_up(timeout = 300)
+    if (is.null(url_par()$inputs$dash)) return()
+    sing_values$url_param_table <- url_par()$inputs$dash
+  })
+
+  results <- render_sing(session,
+                         input,
+                         bd = bd(),
+                         input_params = input_params,
+                         sing_values = sing_values)
+
+
+  sing:::sing(session,
+              input,
+              output,
+              output_id = "moe_inputs",
+              results = results)
+
+
+  #observeEvent(input$mapa_riesgo_selector_input,{
+  observe({
+    if(is.null(input$what_table_input)) return()
+    if (is.null(data_filter())) return()
+    if (is.null(data_filter()$data_filter)) return()
+
+    if (input$what_table_input == "mapa_riesgo") {
+      if (is.null(results$data_server$mapa_riesgo)) return()
+      if (nrow(data_filter()$data_filter) == 0) return()
+      if (is.null(input$mapa_riesgo_selector_input)) return()
+      sing_values$mp_var_riesgo <- sort(unique(data_filter()$data_filter$variable))[1]
+      sing_values$mp_var_circ <- unique(data_filter()$data_filter$circ)[1]
+
+
+      print(input$mapa_riesgo_annoh_input)
+
+
+
+
+      if (input$mapa_riesgo_selector_input =="circ") sing_values$mp_var_circ <- NULL
+      if (input$mapa_riesgo_selector_input %in% c("annoh", "circ")) {
+        sing_values$mp_var_ind <- TRUE
+      } else {
+        sing_values$mp_var_ind <- FALSE
+      }
+      if (input$mapa_riesgo_selector_input %in% c("codmpio", "departamento", "circ")) {
+        sing_values$mp_riesgo_annio_sel <- rev(sort(unique(data_filter()$data_filter$annoh)))[1]
+        sing_values$mp_riesgo_annio_ind <- FALSE
+      } else {
+        sing_values$mp_riesgo_annio_sel <- NULL
+        sing_values$mp_riesgo_annio_ind <- TRUE
+      }
+    }
+    if (input$what_table_input == "elecciones_municipios") {
+      if (!is.null(input$elecciones_municipios_vista_input)) {
+        if (input$elecciones_municipios_vista_input == "munic") {
+          if (is.null(input$elecciones_municipios_selector_input)) return()
+          if (input$elecciones_municipios_selector_input != "annoh") {
+            sing_values$elecciones_municipios_annio_sel <- "2022"#rev(sort(unique(data_filter()$data_filter$annoh)))[1]
+            sing_values$elecciones_municipios_annio_ind <- FALSE
+          } else {
+            sing_values$elecciones_municipios_annio_sel <- NULL
+            sing_values$elecciones_municipios_annio_ind <- TRUE
+          }
+          if (input$elecciones_municipios_selector_input == "comparacion") {
+            if (!is.null(input$elecciones_municipios_cruce_input)) {
+              if (input$elecciones_municipios_cruce_input == "annoh") {
+                sing_values$elecciones_municipios_annio_sel <- NULL
+                sing_values$elecciones_municipios_annio_ind <- TRUE
+              }
+            }
+          }
+          var_elc <- NULL
+          if (!is.null(results$data_server$elecciones_municipios)) {
+            print(input$elecciones_municipios_annoh_input)
+            if (is.null(input$elecciones_municipios_annoh_input)) {
+              df <- results$data_server$elecciones_municipios
+            } else {
+              df <- results$data_server$elecciones_municipios |>
+                filter(annoh %in% input$elecciones_municipios_annoh_input)
+            }
+            if (nrow(df) != 0) {
+              opts_var <- sort(unique(df$eleccion))
+              sing_values$eleccion_elec_opts <- opts_var
+              op <- length(opts_var)
+              if (length(opts_var) > 1) {
+                op <- length(opts_var)-1
+              }
+              var_elc <- opts_var[op]
+              sing_values$eleccion_elec_selec <- var_elc
+              sing_values$eleccion_elec_mul <- FALSE
+            }
+          }
+          if (input$elecciones_municipios_selector_input == "eleccion") {
+            sing_values$eleccion_elec_selec <- NULL
+            sing_values$eleccion_elec_mul <- TRUE
+          }
+        } else {
+          #### BASE DE PARTIDOS
+          df <- data_elec_polit |> arrange(-votos)
+          sing_values$elec_part_dept <- sort(unique(df$nomdepto))
+          if (!is.null(input$elecciones_partidos_departamento_input)) {
+            df <- df |> filter(nomdepto %in% input$elecciones_partidos_departamento_input)
+          }
+          sing_values$elec_part_partido <- unique(df$nomparti)[1:1000]
+          if (!is.null(input$elecciones_partidos_annoh_input)) {
+            df2 <- df |> filter(annoh %in% input$elecciones_partidos_annoh_input)
+            if (!is.null(input$elecciones_partidos_eleccion_input)) {
+              df3 <- df2 |> filter(eleccion %in% input$elecciones_partidos_eleccion_input)
+              sing_values$elec_part_partido <- unique(df3$nomparti)
+            }
+          }
+
+
+          sing_values$elec_part_muni <- sort(unique(df$nommun))
+          sing_values$elec_part_annio_opts <- sort(unique(df$annoh))
+          #sing_values$elec_part_zona <- unique(df$zona)
+
+          if (is.null(input$elecciones_partidos_selector_input)) return()
+          if (input$elecciones_partidos_selector_input == "annoh") {
+            sing_values$elec_part_annio_sel <- NULL
+            sing_values$elec_part_annio_ind <- TRUE
+
+          } else {
+            sing_values$elec_part_annio_sel <- "2022"#rev(sort(unique(data_filter()$data_filter$annoh)))[1]
+            sing_values$elec_part_annio_ind <- FALSE
+          }
+          # if (input$elecciones_partidos_selector_input == "comparacion") {
+          #   if (!is.null(input$elecciones_partidos_cruce_input)) {
+          #     if (input$elecciones_partidos_cruce_input == "annoh") {
+          #       sing_values$elec_part_annio_sel <- NULL
+          #       sing_values$elec_part_annio_ind <- TRUE
+          #     }
+          #   }
+          # }
+          if (nrow(df) != 0) {
+            if (is.null(input$elecciones_partidos_annoh_input)) {
+              opts_var <- rev(unique(df$eleccion))
+            } else {
+              opts_var <- rev(unique(df2$eleccion))
+            }
+            sing_values$elec_part_elec_opts <- opts_var
+            var_elc <- NULL
+            #if (input$elecciones_partidos_selector_input != "eleccion") {
+            var_elc <- opts_var[length(opts_var)]
+            #}
+            sing_values$elec_part_elec_selec <- var_elc
+            sing_values$elec_part_elec_mul <- FALSE
+          }
+        }
+      }
+    }
+    if (input$what_table_input == "censo_electoral") {
+      if (is.null(input$censo_electoral_selector_input)) return()
+      if (input$censo_electoral_selector_input != "ano") {
+        sing_values$censo_annio_ind <- FALSE
+        sing_values$censo_annio_sel <- 2022
+      } else {
+        sing_values$censo_annio_sel <-  NULL
+        sing_values$censo_annio_ind <- TRUE
+      }
+    }
+
+    if (input$what_table_input == "grupos_ilegales") {
+      if (is.null(input$grupos_ilegales_selector_input)) return()
+      var_cruce <- data.frame(var = c("categoria", "agresion", "grupo_armado", "poblacion_afectada"),
+                              label = c("Categoría", "Agresión", "Grupo armado", "Población afectada"))
+      if (!input$grupos_ilegales_selector_input %in% c("annio", "departamento")) {
+        var_cruce <- var_cruce |> filter(var != input$grupos_ilegales_selector_input)
+      }
+      sing_values$grupos_ilegales_cruce_opts <- setNames(var_cruce$var, var_cruce$label)
+    }
+    if (input$what_table_input == "pilas_voto") {
+      if (is.null(input$pilas_voto_selector_input)) return()
+      if (input$pilas_voto_selector_input == "ano") {
+        sing_values$pilas_annio <- NULL
+      } else {
+        sing_values$pilas_annio <- "2022"
+      }
+    }
+
+    if (input$what_table_input == "inscripcion_cedulas") {
+      if (is.null(input$inscripcion_cedulas_selector_input)) return()
+      if (input$inscripcion_cedulas_selector_input != "ano") {
+        sing_values$incri_annio_ind <- FALSE
+        sing_values$incri_annio_sel <- 2022
+      } else {
+        sing_values$incri_annio_sel <-  NULL
+        sing_values$incri_annio_ind <- TRUE
+      }
+    }
+
+
+
+    if (input$what_table_input == "participacion_mujer") {
+      if (is.null(input$participacion_mujer_selector_input)) return()
+      sing_values$part_elec_sel <- unique(data_filter()$data_filter$eleccion)[1]
+      if (input$participacion_mujer_selector_input != "ano") {
+        sing_values$part_annio_ind <- FALSE
+        sing_values$part_annio_sel <- 2022
+      } else {
+        sing_values$part_annio_sel <-  NULL
+        sing_values$part_annio_ind <- TRUE
+      }
+      if (!is.null(sing_values$viz_active)) {
+        if (sing_values$viz_active == "map")  {
+          sing_values$part_gen_sel <- "Femenino"
+        } else {
+          sing_values$part_gen_sel <- c("Femenino", "Masculino")
+        }
+      }
+    }
+
+    if (input$what_table_input == "financiacion") {
+      if (is.null(input$financiacion_selector_input)) return()
+      if (input$financiacion_selector_input == "eleccion") {
+        sing_values$fin_elec <- NULL
+      } else {
+        sing_values$fin_elec <- unique(data_filter()$data_filter$eleccion)[1]
+      }
+    }
+
+  })
+
+
+  observe({
+    if (is.null(input$what_table_input)) return()
+    if (input$what_table_input == "mapa_riesgo") {
+      if (is.null(results$data_server$mapa_riesgo)) return()
+      print(input$mapa_riesgo_annoh_input)
+      print(input$mapa_riesgo_variable_input)
+      df <- results$data_server$mapa_riesgo
+      if (!is.null(input$mapa_riesgo_annoh_input)) {
+        df <- df |>
+          filter(annoh %in% input$mapa_riesgo_annoh_input)
+      }
+      if (!is.null(input$mapa_riesgo_variable_input)) {
+        df <- df |>
+          filter(variable %in% input$mapa_riesgo_variable_input)
+      }
+      sing_values$mp_circ_opts <- rev(unique(df$circ))
+    }
+  })
+
+  output$opts_ptc <- renderUI({
+    if (is.null(input$what_table_input)) return()
+    if (is.null(sing_values$viz_active)) return()
+    if (sing_values$viz_active == "map") return()
+    shinyinvoer::toggleSwitchInput("calc_ptc", " ", on_label = "%", off_label = "%")
+  })
+
+  df_partido <- reactive({
+    if (is.null(input$what_table_input)) return()
+    if (input$what_table_input != "elecciones_municipios") return()
+    if (is.null(input$elecciones_municipios_vista_input)) return()
+    if (input$elecciones_municipios_vista_input == "munic") return()
+    df <- data_elec_polit
+    if (!is.null(input$elecciones_partidos_departamento_input)) {
+      df <- df |> filter(nomdepto %in% input$elecciones_partidos_departamento_input)
+    }
+    if (!is.null(input$elecciones_partidos_municipio_input)) {
+      df <- df |> filter(nommun %in% input$elecciones_partidos_municipio_input)
+    }
+    if (!is.null(input$elecciones_partidos_annoh_input)) {
+      df <- df |> filter(annoh %in% input$elecciones_partidos_annoh_input)
+    }
+    if (!is.null(input$elecciones_partidos_eleccion_input)) {
+      df <- df |> filter(eleccion %in% input$elecciones_partidos_eleccion_input)
+    }
+    # if (!is.null(input$elecciones_partidos_zona_input)) {
+    #   df <- df |> filter(zona %in% input$elecciones_partidos_zona_input)
+    # }
+    if (!is.null(input$elecciones_partidos_partido_input)) {
+      df <- df |> filter(nomparti %in% input$elecciones_partidos_partido_input)
+    }
+
+
+    df
+  })
+
+  data_plot <- reactive({
+    if(is.null(input$what_table_input)) return()
+    if (is.null(data_filter())) return()
+    if (is.null(data_filter()$data_filter)) return()
+    if (nrow(data_filter()$data_filter) == 0) return()
+    tryCatch({
+      df <- data_filter()$data_filter
+      if (nrow(df) == 0) return()
+      if (input$what_table_input == "mapa_riesgo") {
+        if (is.null(input$mapa_riesgo_selector_input)) return()
+        if (is.null(results$data_server$mapa_riesgo)) return()
+        var <- c(input$mapa_riesgo_selector_input, "riesgo")
+        if (input$mapa_riesgo_selector_input %in% c("annoh", "departamento", "circ")) var <- rev(var)
+        df <- df[,var]
+        if ("codmpio" == input$mapa_riesgo_selector_input) {
+          #df$codmpio <- sprintf("%05d", df$codmpio)
+          df$color <- recode(df$riesgo,
+                             "Extremo (por alto nivel de la variable)" = "#9d0208",
+                             "Alto (por alto nivel de la variable)" = "#dc2f02",
+                             "Alto (por bajo nivel de la variable)" = "#e85d04",
+                             "Medio (por alto nivel de la variable)" = "#f48c06",
+                             "Medio (por bajo nivel de la variable)" = "#faa307")
+        } else {
+          df <- dsdataprep::aggregation_data(data = df,
+                                             agg = "count",
+                                             group_var = var,
+                                             agg_name = "Total municipios")
+        }
+      }
+      if (input$what_table_input == "violencia_liderazgos") {
+        if (is.null(input$violencia_liderazgos_selector_input)) return()
+        var <- input$violencia_liderazgos_selector_input
+        var_cruce <- NULL
+        if (var != "code_dane") {
+          if (!is.null(input$violencia_liderazgos_cruce_input)) {
+            if (input$violencia_liderazgos_cruce_input != "") {
+              var_cruce <- input$violencia_liderazgos_cruce_input
+            }
+          }
+        }
+        var <- c(var_cruce, var)
+        df <- df[,var]
+        df <- dsdataprep::aggregation_data(data = df,
+                                           agg = "count",
+                                           group_var = var,
+                                           agg_name = "Víctimas registradas")
+        if (var == "code_dane") {
+          df$code_dane <- sprintf("%05d", df$code_dane)
+          jenks_intervals <- classInt::classIntervals(df$`Víctimas registradas`,
+                                                      n = 5, style = "jenks")
+          vec <- jenks_intervals$brks
+          res <- paste(sprintf("%.0f", vec[-length(vec)]), sprintf("%.0f", vec[-1]), sep = " - ")
+          df_color <- data.frame(jenks_class = res,
+                                 color = c("#ffe7b4", "#ffcc00", "#ffce84", "#ff9b52", "#ff5a19")
+          )
+          # Agregar la nueva columna con los rangos Jenks
+          df$jenks_class <- cut(df$`Víctimas registradas`,
+                                breaks = vec,
+                                include.lowest = TRUE)
+
+          # Convertir en cadena de texto con formato específico
+          df$jenks_class <- as.character(df$jenks_class)
+          df$jenks_class <- gsub(","," - ", df$jenks_class)
+          df$jenks_class <- gsub("\\(|\\[","", df$jenks_class)
+          df$jenks_class <- gsub("\\]","", df$jenks_class)
+          df <- df |> left_join(df_color)
+        }
+      }
+
+      if (input$what_table_input == "elecciones_municipios") {
+        if (!is.null(input$elecciones_municipios_vista_input)) {
+          if (input$elecciones_municipios_vista_input == "munic") {
+            if (is.null(input$elecciones_municipios_selector_input)) return()
+
+            var <- input$elecciones_municipios_selector_input
+            print(input$elecciones_municipios_annoh_input)
+            if (is.null(input$elecciones_municipios_col_input)) return()
+            if (input$elecciones_municipios_selector_input %in% c("nomdepto", "codmpio")) {
+              if (is.null(input$elecciones_municipios_annoh_input)) return()
+            }
+            var_num <- input$elecciones_municipios_col_input
+
+            df <- df[,c(var, var_num)]
+            agg_n <- "mean"
+            if (var_num %in% c("censo", "votos")) agg_n <- "sum"
+            print(agg_n)
+            df <- dsdataprep::aggregation_data(data = df,
+                                               agg = agg_n,
+                                               group_var = var,
+                                               to_agg = var_num,
+                                               agg_name = var_num)
+          } else {
+            if (is.null(df_partido())) return()
+            if (nrow(df_partido()) == 0) return()
+            if (is.null(input$elecciones_partidos_selector_input)) return()
+            # print("##############!!!")
+            # print(input$elecciones_partidos_annoh_input)
+            # print(input$elecciones_partidos_eleccion_input)
+            n <- 1
+            if (!input$elecciones_partidos_selector_input %in% c("nomdepto", "codmpio")) n <- 5
+              df <- df_partido() |>
+                group_by(!!sym(input$elecciones_partidos_selector_input)) |>
+                top_n(n, votos)
+
+            # if ("codmpio" %in% names(df)) {
+            #   df$codmpio <- sprintf("%05d", df$codmpio)
+            # }
+
+            #  print(df)
+
+            var <- input$elecciones_partidos_selector_input
+
+            if (var == "partido") {
+              var <- "partido"
+            } else {
+              var <- c("partido", var)
+            }
+
+
+
+            # print(var_num)
+            print("avver")
+            print(var)
+            print(names(df))
+            df <- df[,c(var, "votos", "nomparti", "color")]
+
+            #print(df)
+            # agg_n <- "mean"
+            # if (var_num %in% "votos") agg_n <- "sum"
+            # df <- dsdataprep::aggregation_data(data = df,
+            #                                    agg = "sum",
+            #                                    group_var = var,
+            #                                    to_agg = "votos",
+            #                                    agg_name = "votos")
+            # print(df)
+            # #if (input$elecciones_partidos_selector_input != "partido") {
+            #   if (!var %in% c("nomdepto", "codmpio")) n <- 5
+           # print("$$$$$$")
+           #  #   print(n)
+           #  #   print("holaaaaaaaaaaa")
+           #    df <- df |>
+           #      group_by(codmpio) |>
+           #      slice_max(votos)
+           #   #print(df)
+           #  #}
+
+          }
+
+        }
+      }
+
+      if (input$what_table_input == "censo_electoral") {
+        if (is.null(input$censo_electoral_selector_input)) return()
+        var <- input$censo_electoral_selector_input
+        var_cruce <- NULL
+        var_num <- NULL
+        var_gt <- NULL
+        var_cat <- var
+        if (!is.null(input$censo_electoral_col_input)){
+          var_num <- input$censo_electoral_col_input
+        }
+
+        if (var != "code_dane") {
+          if (!is.null(input$censo_electoral_cruce_input)) {
+            if (input$censo_electoral_cruce_input != "") {
+              if(input$censo_electoral_cruce_input == "genero") {
+                var_gt <- var
+                var_cruce <- c("mujeres", "hombres")
+                var_num <- NULL
+              } else {
+                var_cruce <- input$censo_electoral_cruce_input
+              }
+            }
+          }
+          var <- c(var_cruce, var)
+          var_cat <- c(var_cruce, var)
+        }
+        var <- c(var, var_num)
+        df <- df[,var]
+        if (is.null(var_num)) var_num <- c("mujeres", "hombres")
+        if (is.null(var_gt)) {
+          df[[1]] <- as.character(df[[1]])
+          df <- dsdataprep::aggregation_data(data = df,
+                                             agg = "sum",
+                                             group_var = var_cat,
+                                             to_agg = var_num,
+                                             agg_name = var_num)
+          if (var_cat == "code_dane") {
+            #df$code_dane <- sprintf("%05d", df$code_dane)
+            print(df)
+            print(var_num)
+            nm_vn <- paste0("rango_", var_num)
+            df[[nm_vn]] <- ifelse(df[[var_num]] < 1000, "0 - 1000",
+                                  ifelse(df[[var_num]] >= 1000 & df[[var_num]] < 10000, "1,000 - 10,000",
+                                         ifelse(df[[var_num]] >= 10000 & df[[var_num]] < 100000, "10,000 - 100,000",
+                                                ifelse(df[[var_num]] >= 100000 & df[[var_num]] < 500000, "100,000 - 500,000", ">500,000")
+                                         )
+                                  )
+            )
+            df$color <- recode(df[[nm_vn]],
+                               "0 - 1000" = "#ffe7b4",
+                               "1,000 - 10,000" = "#ffcc00",
+                               "10,000 - 100,000" = "#b9e3c8",
+                               "100,000 - 500,000" = "#78d09c",
+                               ">500,000" = "#00bc72")
+          }
+        } else {
+          df <- df |>
+            group_by(!!sym(var_gt)) |>
+            summarise(Hombres = sum(hombres, na.rm = T),
+                      Mujeres = sum(mujeres, na.rm = T)) |>
+            tidyr::gather("genero", "Total", Hombres, Mujeres)
+          df <- df |> select(genero, everything())
+        }
+      }
+
+      if (input$what_table_input == "grupos_ilegales") {
+        if (is.null(input$grupos_ilegales_selector_input)) return()
+        var <- input$grupos_ilegales_selector_input
+        var_cruce <- NULL
+        if (var != "codane") {
+          if (!is.null(input$grupos_ilegales_cruce_input)) {
+            if (input$grupos_ilegales_cruce_input != "") {
+              var_cruce <- input$grupos_ilegales_cruce_input
+            }
+          }
+        } else {
+          df$codane <- sprintf("%05d", df$codane)
+        }
+
+        var <- c(var_cruce, var)
+        df <- df[,var] |> tidyr::drop_na()
+        df <- dsdataprep::aggregation_data(data = df,
+                                           agg = "count",
+                                           group_var = var,
+                                           agg_name = "Resgistros")
+      }
+
+      if (input$what_table_input == "inscripcion_cedulas") {
+        if (is.null(input$inscripcion_cedulas_selector_input)) return()
+        if (is.null(input$inscripcion_cedulas_col_input)) return()
+        var_cat <- input$inscripcion_cedulas_selector_input
+        var_num <- input$inscripcion_cedulas_col_input
+        var <- c(var_cat, var_num)
+        df <- df[,var]
+        agg <- "sum"
+        agg_name <- "Inscripción de cédulas"
+        if (var_num == "tasa_de_inscripcion_de_cedulas") {
+          agg <- "mean"
+          agg_name <- "Tasa de Inscripción de cedulas"
+          if (input$inscripcion_cedulas_selector_input != "ano") {
+            agg_name <- "Tasa de inscripción promedio"
+          }
+        }
+        df <- dsdataprep::aggregation_data(data = df,
+                                           agg = agg,
+                                           group_var = var_cat,
+                                           to_agg = var_num,
+                                           agg_name = agg_name)
+        # 10.000 a 50.000 y 50.000 a 100.000 y 100.000 en adelante
+        print(var_num)
+        if (var_num == "incripcion_de_cedulas") {
+          nm_vn <- paste0("rango_", var_num)
+          df[[nm_vn]] <- ifelse(df[[agg_name]] < 500, "0 - 500",
+                                ifelse(df[[agg_name]] >= 500 & df[[agg_name]] < 1000, "500 - 1,000",
+                                       ifelse(df[[agg_name]] >= 1000 & df[[agg_name]] < 5000, "1,000 - 5,000",
+                                              ifelse(df[[agg_name]] >= 5000 & df[[agg_name]] < 10000, "5,000 - 10,000",
+                                                     ifelse(df[[agg_name]] >= 10000 & df[[agg_name]] < 50000, "10,000 - 50,000",
+                                                            ifelse(df[[agg_name]] >= 50000 & df[[agg_name]] < 100000, "50,000 - 100,000", ">100,000"
+                                                            )
+                                                     )
+                                              )
+                                       )
+                                )
+          )
+          df$color <- recode(df[[nm_vn]],
+                             "0 - 500" = "#ffe7b4",
+                             "500 - 1,000" = "#ffda75",
+                             "1,000 - 5,000" = "#ffcc00",
+                             "5,000 - 10,000" = "#ffad55",
+                             "10,000 - 50,000" = "#b9e3c8",
+                             "50,000 - 100,000" = "#78d09c",
+                             ">100,000" = "#00bc72")
+        }
+        if ("code_dane" %in% names(df)) {
+          df$code_dane <- sprintf("%05d", df$code_dane)
+        }
+      }
+      if (input$what_table_input == "participacion_mujer") {
+        if (is.null(input$participacion_mujer_selector_input)) return()
+        var <- input$participacion_mujer_selector_input
+        if (var != "electo_a_ganador_a") {
+          if (is.null(input$participacion_mujer_col_input)) return()
+          df <- df |> filter(electo_a_ganador_a %in% input$participacion_mujer_col_input)
+        }
+        var <- c("genero", var)
+        df <- dsdataprep::aggregation_data(data = df,
+                                           agg = "count",
+                                           group_var = var,
+                                           agg_name = "Total")
+      }
+
+      if (input$what_table_input == "observacion_politica") {
+        if (is.null(input$observacion_politica_selector_input)) return()
+        var <- input$observacion_politica_selector_input
+        df <- dsdataprep::aggregation_data(data = df,
+                                           agg = "count",
+                                           group_var = var,
+                                           agg_name = "Total observadores")
+        df$Observador <- "Si"
+        df <- df |> dplyr::full_join(all_mun)
+        df$Observador[is.na(df$Observador)] <- "No"
+        df$color <- recode(df$Observador,
+                           "Si" = "#78d09c",
+                           "No" = "#ffda75")
+
+        if (input$observacion_politica_selector_input == "enfoques_difereciales_solo_2022") {
+          df <- df |> filter(enfoques_difereciales_solo_2022 != "(NA)")
+        }
+        if ("code_dane" %in% names(df)) {
+          df$code_dane <- sprintf("%05d", df$code_dane)
+        }
+      }
+
+      if (input$what_table_input == "pilas_voto") {
+        if (is.null(input$pilas_voto_selector_input)) return()
+        var <- input$pilas_voto_selector_input
+        df <- dsdataprep::aggregation_data(data = df,
+                                           agg = "count",
+                                           group_var = var,
+                                           agg_name = "Total")
+        df$range_total <- ifelse(df$Total <= 1, "0 - 1",
+                                 ifelse(df$Total > 1 & df$Total <=10, "1 - 10",
+                                        ifelse(df$Total > 10 & df$Total < 100, "10 - 100", "> 100")))
+        df$color <- recode(df$range_total,
+                           "0 - 1" = "#fffeb4",
+                           "1 - 10" = "#ffce84",
+                           "10 - 100" = "#ff9b52",
+                           "> 100" = "#ff5a19")
+
+        if ("coddane" %in% names(df)) {
+          df <-  df[nchar(as.character(df$coddane)) > 3, ]
+          df$coddane <- sprintf("%05d", df$coddane)
+        }
+      }
+
+      if (input$what_table_input == "financiacion") {
+        if (is.null(input$financiacion_selector_input)) return()
+        var <- input$financiacion_selector_input
+        if (is.null(input$financiacion_col_input)) return()
+        df <- df |> filter(ingresos_gastos %in% input$financiacion_col_input)
+        agg_n <- input$financiacion_col_input
+        var_num <- "ing_valor"
+        df <- dsdataprep::aggregation_data(data = df,
+                                           agg = "sum",
+                                           group_var = var,
+                                           to_agg = var_num,
+                                           agg_name = paste0("Total ", agg_n))
+        if (!var %in% c("departamento", "fecha_2")) {
+          if (nrow(df) > 15) {
+            df <- df |> arrange(desc(!!sym(paste0("Total ", agg_n))))
+            df <- df[1:15,]
+          }
+        }
+      }
+
+
+    }, error = function(e) {
+      df <- NULL
+    })
+    df
+  })
+
+
+  # output$test <- renderPrint({
+  #   if (is.null( data_plot())) return()
+  #   data_plot()
+  # })
+
+  available_viz <- reactive({
+    if(is.null(input$what_table_input)) return()
+    if (is.null(data_plot())) return()
+    viz <- NULL
+    if (input$what_table_input == "mapa_riesgo") {
+      if (is.null(input$mapa_riesgo_selector_input)) return()
+      var <- input$mapa_riesgo_selector_input
+      if (var == "codmpio") viz <- "map"
+      if (var %in% "departamento") viz <- c("bar", "treemap")
+      if (var %in% "annoh") viz <- c("bar", "line")
+      if (var %in% "circ") viz <- c("bar", "treemap")
+    }
+    if (input$what_table_input == "violencia_liderazgos") {
+      if (is.null(input$violencia_liderazgos_selector_input)) return()
+      var <- input$violencia_liderazgos_selector_input
+      if (var == "code_dane") viz <- "map"
+      if (var %in% "depto") viz <- c("bar", "treemap")
+      if (var %in% "annio") viz <- c("bar", "line")
+    }
+    if (input$what_table_input == "elecciones_municipios") {
+      if (!is.null(input$elecciones_municipios_vista_input)) {
+        if (input$elecciones_municipios_vista_input == "munic") {
+          if (is.null(input$elecciones_municipios_selector_input)) return()
+          var <- input$elecciones_municipios_selector_input
+          viz <- c("bar")
+          if (var == "codmpio") viz <- "map"
+          if (var %in% "nomdepto") viz <- c("map","bar", "treemap")
+          if (var %in% "annoh") viz <- c("bar", "line")
+        } else {
+          if (is.null(input$elecciones_partidos_selector_input)) return()
+          var <- input$elecciones_partidos_selector_input
+          viz <- c("bar", "treemap")
+          if (var == "codmpio") viz <- "map"
+          if (var %in% "nomdepto") viz <- c("map","bar", "treemap")
+          if (var %in% "annoh") viz <- c("bar")
+        }
+      }
+    }
+    if (input$what_table_input == "censo_electoral") {
+      if (is.null(input$censo_electoral_selector_input)) return()
+      var <- input$censo_electoral_selector_input
+      if (var == "ano") viz <- c("bar", "line")
+      if (var == "code_dane") viz <- "map"
+      if (var == "departamento") {
+        var_cruce <- input$censo_electoral_cruce_input
+        if (is.null(var_cruce)) {
+          viz <- c("map", "bar", "treemap")
+        } else {
+          viz <- c("bar", "treemap")
+        }
+      }
+    }
+    if (input$what_table_input == "grupos_ilegales") {
+      if (is.null(input$grupos_ilegales_selector_input)) return()
+      var <- input$grupos_ilegales_selector_input
+      viz <- c("bar", "treemap")
+      if (var == "annio") viz <- c("bar", "line")
+      if (var == "codane") viz <- "map"
+      if (var == "departamento") {
+        var_cruce <- input$grupos_ilegales_cruce_input
+        if (is.null(var_cruce)) {
+          viz <- c("bar", "map",  "treemap")
+        }
+      }
+    }
+    if (input$what_table_input == "inscripcion_cedulas") {
+      if (is.null(input$inscripcion_cedulas_selector_input)) return()
+      var <- input$inscripcion_cedulas_selector_input
+      if (var == "code_dane") viz <- "map"
+      if (var %in% "departamento") viz <- c("map", "bar", "treemap")
+      if (var %in% "ano") viz <- c("bar", "line")
+      if (var %in% "region_electoral") viz <- c("bar", "pie", "treemap")
+    }
+    if (input$what_table_input == "participacion_mujer") {
+      if (is.null(input$participacion_mujer_selector_input)) return()
+      var <- input$participacion_mujer_selector_input
+      viz <- c( "bar", "treemap")
+      if (var == "departamento") viz <- c("bar", "map")
+      if (var %in% "ano") viz <- c("bar", "line")
+    }
+    if (input$what_table_input == "observacion_politica") {
+      if (is.null(input$observacion_politica_selector_input)) return()
+      var <- input$observacion_politica_selector_input
+      viz <- c( "bar", "treemap", "pie")
+      if (var == "code_dane") viz <- "map"
+      if (var == "departamento") viz <- c("map", "bar", "treemap")
+      if (var %in% "ano") viz <- c("bar", "line")
+    }
+    if (input$what_table_input == "pilas_voto") {
+      if (is.null(input$pilas_voto_selector_input)) return()
+      var <- input$pilas_voto_selector_input
+      viz <- c( "bar", "treemap", "pie")
+      if (var == "coddane") viz <- "map"
+      if (var == "departamento") viz <- c("map", "bar", "treemap")
+      if (var %in% "ano") viz <- c("bar", "line")
+    }
+    if (input$what_table_input == "financiacion") {
+      if (is.null(input$financiacion_selector_input)) return()
+      var <- input$financiacion_selector_input
+      viz <- c( "bar")
+      if (var == "departamento") viz <- c("map")
+      if (var %in% "fecha_2") viz <- c("line")
+    }
+
+
+
+    viz
+
+  })
+
+
+  hover_viz <- reactive({
+    req(available_viz())
+    df_av <- data.frame(id = available_viz())
+    df <- data.frame(id = c("map", "bar", "line", "pie", "treemap", "table"),
+                     label = c("Mapa", "Barras", "Línea", "Pie", "Treemap", "Tabla"))
+    df <- df_av |> dplyr::inner_join(df)
+    df$label
+  })
+
+
+  observe({
+    req(available_viz())
+    #print(data_filter()$opts_viz)
+    viz_rec <- available_viz()
+    viz_def <- input$viz_selection
+    if (is.null(viz_def)) return()
+    if (viz_def %in% viz_rec) {
+      sing_values$viz_active <- viz_def
+    } else {
+      sing_values$viz_active <- viz_rec[1]
+    }
+  })
+
+  output$viz_icons <- renderUI({
+    req(available_viz())
+    tryCatch({
+      suppressWarnings(
+        buttonImageInput('viz_selection',
+                         " ",
+                         images = available_viz(),
+                         tooltips = hover_viz(),
+                         path = 'icons/',
+                         active = sing_values$viz_active
+        )
+      )},
+      error = function(e) {
+        return()
+      })
+  })
+
+
+  viz_type <- reactive({
+    if(is.null(input$what_table_input)) return()
+    if (is.null(data_plot())) return()
+    if (is.null(sing_values$viz_active)) return()
+    viz <- NULL
+    if (input$what_table_input == "mapa_riesgo") {
+      if (is.null(input$mapa_riesgo_selector_input)) return()
+      var <- input$mapa_riesgo_selector_input
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatCatNum"
+        if (sing_values$viz_active == "line") type <- "CatDatNum"
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+    if (input$what_table_input == "elecciones_municipios") {
+      if (!is.null(input$elecciones_municipios_vista_input)) {
+        if (input$elecciones_municipios_vista_input == "munic") {
+          if (is.null(input$elecciones_municipios_selector_input)) return()
+          var <- input$elecciones_municipios_selector_input
+          if (sing_values$viz_active == "map") {
+            viz <- "lt_choropleth"
+          } else {
+            if (var != "comparacion") {
+              type <- "CatNum"
+              if (sing_values$viz_active == "line") type <- "DatNum"
+              viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+            } else {
+              type <- "CatCatNum"
+              if (sing_values$viz_active == "line") type <- "CatDatNum"
+              viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+            }
+          }
+        } else {
+          if (is.null(input$elecciones_partidos_selector_input)) return()
+          var <- input$elecciones_partidos_selector_input
+          if (sing_values$viz_active == "map") {
+            viz <- "lt_choropleth"
+          } else {
+            type <- "CatCatNum"
+            if (var == "partido") type <- "CatNum"
+            if (sing_values$viz_active == "line") type <- "CatDatNum"
+            viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+          }
+        }
+      }
+    }
+    if (input$what_table_input == "violencia_liderazgos") {
+      if (is.null(input$violencia_liderazgos_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatCatNum"
+        if (sing_values$viz_active == "line") type <- "CatDatNum"
+        if (ncol(data_plot()) == 2) {
+          type <- "CatNum"
+          if (sing_values$viz_active == "line") type <- "DatNum"
+        }
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+    if (input$what_table_input == "censo_electoral") {
+      if (is.null(input$censo_electoral_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatCatNum"
+        if (sing_values$viz_active == "line") type <- "CatDatNum"
+        if (ncol(data_plot()) == 2) {
+          type <- "CatNum"
+          if (sing_values$viz_active == "line") type <- "DatNum"
+        }
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+
+    if (input$what_table_input == "grupos_ilegales") {
+      if (is.null(input$grupos_ilegales_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatCatNum"
+        if (sing_values$viz_active == "line") type <- "CatDatNum"
+        if (ncol(data_plot()) == 2) {
+          type <- "CatNum"
+          if (sing_values$viz_active == "line") type <- "DatNum"
+        }
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+    if (input$what_table_input == "inscripcion_cedulas") {
+      if (is.null(input$inscripcion_cedulas_selector_input)) return()
+      var <- input$inscripcion_cedulas_selector_input
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatNum"
+        if (sing_values$viz_active == "line") type <- "DatNum"
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+    if (input$what_table_input == "participacion_mujer") {
+      if (is.null(input$participacion_mujer_selector_input)) return()
+      var <- input$participacion_mujer_selector_input
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatCatNum"
+        if (sing_values$viz_active == "line") type <- "CatDatNum"
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+    if (input$what_table_input == "observacion_politica") {
+      if (is.null(input$observacion_politica_selector_input)) return()
+      var <- input$observacion_politica_selector_input
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatNum"
+        if (sing_values$viz_active == "line") type <- "DatNum"
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+
+    if (input$what_table_input == "pilas_voto") {
+      if (is.null(input$pilas_voto_selector_input)) return()
+      var <- input$pilas_voto_selector_input
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatNum"
+        if (sing_values$viz_active == "line") type <- "DatNum"
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+
+    if (input$what_table_input == "financiacion") {
+      if (is.null(input$financiacion_selector_input)) return()
+      var <- input$financiacion_selector_input
+      if (sing_values$viz_active == "map") {
+        viz <- "lt_choropleth"
+      } else {
+        type <- "CatNum"
+        if (sing_values$viz_active == "line") type <- "DatNum"
+        viz <- paste0("hgch_", sing_values$viz_active, "_", type)
+      }
+    }
+
+    print(viz)
+    viz
+  })
+
+  index_info <- reactive({
+    req(results$inputs_user$what_table_input)
+    d <- results$inputs_user$what_table_input #"mapa_riesgo"
+    inputs_info <- index_conf[[d]]
+    caption <- NULL
+    l <- lapply(names(inputs_info), function(i){
+      tx <- NULL
+      index_value <- results$inputs_user[[i]]
+      if (!is.null(index_value)) {
+        # if (index_value != "") {
+        index_value <- paste0(index_value, collapse = " - ")
+        tx <- HTML(paste0("<b>",inputs_info[[i]]$label, ":<b/> ", index_value))
+        # }
+      }
+      tx
+    }) |> discard(is.null)
+
+    if (length(l) > 0) {
+      caption <- HTML(paste0(l, collapse = "<br/>"))
+    }
+    caption
+  })
+
+  titles_viz <- reactive({
+    if(is.null(input$what_table_input)) return()
+    tx <- NULL
+    if (input$what_table_input == "mapa_riesgo") {
+      if (is.null(input$mapa_riesgo_selector_input)) return()
+      var <- input$mapa_riesgo_selector_input
+      if (var == "codmpio")  tx <- "Riesgo electoral por municipio de Colombia"
+      if (var == "departamento")  tx <- "Riesgo electoral por departamento de Colombia"
+      if (var == "annoh")  tx <- "Histórico de riesgo electoral en Colombia por año"
+      if (var == "circ")  tx <- "Riesgo electoral por corporación de Colombia"
+    }
+    if (input$what_table_input == "violencia_liderazgos") {
+      if (is.null(input$violencia_liderazgos_selector_input)) return()
+      var <- input$violencia_liderazgos_selector_input
+      if (var == "code_dane")  tx <- "Violencia contra liderazgos en Colombia por municipio"
+      if (var == "depto")  tx <- paste0("Violencia contra liderazgos en Colombia por departamento")
+      if (var == "annio")  tx <- "Violencia contra liderazgos en Colombia por año"
+      if (!is.null(input$violencia_liderazgos_cruce_input)) {
+        tx <- paste0(tx, " y ", input$violencia_liderazgos_cruce_input)
+      }
+    }
+    if (input$what_table_input == "elecciones_municipios") {
+      if (!is.null(input$elecciones_municipios_vista_input)) {
+        if (input$elecciones_municipios_vista_input == "munic") {
+          if (is.null(input$elecciones_municipios_selector_input)) return()
+          var <- input$elecciones_municipios_selector_input
+          if (is.null(input$elecciones_municipios_col_input)) return()
+          var_num <- input$elecciones_municipios_col_input
+          if (var_num == "participacion") var_num <- "participación"
+          if (var_num == "abstencion") var_num <- "abstención"
+          elec <- ""
+          if (input$elecciones_municipios_selector_input != "eleccion") {
+            elec <- paste0(" ", input$elecciones_municipios_eleccion_input)
+          }
+          var_sel <- input$elecciones_municipios_selector_input
+          if (var_sel == "codmpio") var_sel <- "municipios"
+          if (var_sel == "nomdepto") var_sel <- "departamentos"
+          if (var_sel == "annoh") var_sel <- "años"
+          if (var_sel == "eleccion") var_sel <- "elecciones"
+          tx <- paste0("Resultados por ", var_num, " en elecciones", elec, " por ", var_sel)
+        } else {
+          tx <- "Resultados electorales por partidos"
+        }
+      }
+    }
+    if (input$what_table_input == "censo_electoral") {
+      if (is.null(input$censo_electoral_selector_input)) return()
+      var <- input$censo_electoral_selector_input
+      if (var == "code_dane")  tx <- "Censo electoral en Colombia por municipio"
+      if (var == "departamento")  tx <- paste0("Censo electoral en Colombia por departamento")
+      if (var == "ano")  tx <- "Censo electoral en Colombia por año"
+      if (!is.null(input$censo_electoral_cruce_input)) {
+        tx <- paste0(tx, " y ", input$censo_electoral_cruce_input)
+      }
+    }
+    if (input$what_table_input == "grupos_ilegales") {
+      if (is.null(input$grupos_ilegales_selector_input)) return()
+      var <- input$grupos_ilegales_selector_input
+      tx <- paste0("Grupos ilegales en Colombia por ", var)
+      if (var == "codane")  tx <- "Grupos ilegales en Colombia por municipio"
+      if (var == "departamento")  tx <- paste0("Grupos ilegales en Colombia por departamento")
+      if (var == "annio")  tx <- "Grupos ilegales en Colombia por año"
+      if (!is.null(input$grupos_ilegales_cruce_input)) {
+        tx <- paste0(tx, " y ", input$grupos_ilegales_cruce_input)
+      }
+    }
+    if (input$what_table_input == "inscripcion_cedulas") {
+      if (is.null(input$inscripcion_cedulas_selector_input)) return()
+      var <- input$inscripcion_cedulas_selector_input
+      if (var == "code_dane")  tx <- "Inscripción de cédulas por municipio de Colombia"
+      if (var == "departamento")  tx <- "Inscripción de cédulas por departamento de Colombia"
+      if (var == "ano")  tx <- "Inscripción de cédulas en Colombia por año"
+      if (var == "region_electoral")  tx <- "Inscripción de cédulas por regiones de Colombia"
+    }
+    if (input$what_table_input == "participacion_mujer") {
+      if (is.null(input$participacion_mujer_selector_input)) return()
+      var <- input$participacion_mujer_selector_input
+      if (var == "departamento")  tx <- "Participación de la mujer en política por departamentos de Colombia"
+      if (var == "circunscripcion_corporacion")  tx <- "Participación de la mujer en política por corporación en Colombia"
+      if (var == "ano")  tx <- "Histórico de participación de la mujer en política en Colombia por año"
+      if (var == "electo_a_ganador_a")  tx <- "Participación de la mujer en política desagregado por electas y ganadoras en Colombia"
+      if (var == "partido")  tx <- "Participación de la mujer en política por partidos políticos en Colombia"
+    }
+    if (input$what_table_input == "observacion_politica") {
+      if (is.null(input$observacion_politica_selector_input)) return()
+      var <- input$observacion_politica_selector_input
+      if (var == "departamento")  tx <- "Departamentos observados en Colombia"
+      if (var == "code_dane")  tx <- "Municipios observados en Colombia"
+      if (var == "ano")  tx <- "Histórico de observadores en Colombia por año"
+      if (var == "enfoques_difereciales_solo_2022")  tx <- "Total observadores electorales por enfoques diferenciales 2022"
+    }
+    if (input$what_table_input == "pilas_voto") {
+      if (is.null(input$pilas_voto_selector_input)) return()
+      var <- input$pilas_voto_selector_input
+      if (var == "departamento")  tx <- "Resumen por departamentos de Colombia"
+      if (var == "coddane")  tx <- "Resumen municipio en Colombia"
+      if (var == "ano")  tx <- "Resumen por años en Colombia por año"
+      if (var == "tipo_de_eleccion")  tx <- "Resumen por tipo de elección"
+      if (var == "irregularidad")  tx <- "Resumen por irregularidad"
+    }
+
+    if (input$what_table_input == "financiacion") {
+      if (is.null(input$financiacion_selector_input)) return()
+      var <- input$financiacion_selector_input
+      if (var == "departamento")  tx <- "Financiacion por departamentos de Colombia"
+      if (var == "fecha_2")  tx <- "Histórico de financiacion en Colombia"
+      if (var == "origen_o_destino")  tx <- "Financiacion por tipo de origen de los recursos en Colombia"
+      if (var == "genero")  tx <- "Financiacion por género en Colombia"
+      if (var == "eleccion")  tx <- "Financiacion por elección en Colombia"
+      if (var == "cnd_nombre")  tx <- "Financiacion por cnd_nombre en Colombia"
+      if (var == "cla_nombre")  tx <- "Financiacion por cla_nombre en Colombia"
+      if (var == "partido")  tx <- "Financiacion por partido en Colombia"
+    }
+
+
+    tx
+  })
+
+
+  theme_viz <- reactive({
+    #print(input$mapa_riesgo_departamento_input)
+    if(is.null(input$what_table_input)) return()
+    if (is.null(data_plot())) return()
+    if (is.null(sing_values$viz_active)) return()
+
+    ptg <- FALSE
+    if (!is.null(input$calc_ptc)) ptg <- input$calc_ptc
+    df <- data_plot()
+    if ("codmpio" %in% names(df)) {
+      df$codmpio <- sprintf("%05d", as.numeric(df$codmpio))
+    }
+    df[[1]] <- as.character(df[[1]])
+
+    opts <- list(
+      data = df,
+      title = titles_viz(),
+      background_color = "#ffffff",
+      title_align = "center",
+      title_size = 14
+    )
+    if (input$what_table_input == "mapa_riesgo") {
+      if (is.null(input$mapa_riesgo_selector_input)) return()
+      var <- input$mapa_riesgo_selector_input
+      if (sing_values$viz_active == "map") {
+        if (var == "codmpio") {
+          opts$var <- "riesgo"
+          opts$map_name <- "col_municipalities"
+          opts$map_name_layers <- "col_departments"
+          opts$color_palette_type <- "categorical"
+          #opts$map_name_layers_params <- list(color = "#000000")
+          if (!is.null(input$mapa_riesgo_departamento_input)) {
+            if (length(input$mapa_riesgo_departamento_input) == 1) {
+              depto <- input$mapa_riesgo_departamento_input
+              if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+              if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+              #"narino"
+              depto <- gsub(" ", "_",
+                            stri_trans_general(
+                              str = tolower(depto),
+                              id = "Latin-ASCII"))
+              opts$map_name <- paste0("col_municipalities_", depto)
+              opts$map_name_layers <- "NA"
+            }
+          }
+          opts$legend_cat_order <- c("Extremo (por alto nivel de la variable)",
+                                     "Alto (por alto nivel de la variable)",
+                                     #"Alto (por bajo nivel de la variable)",
+                                     #"Medio (por bajo nivel de la variable)",
+                                     "Medio (por alto nivel de la variable)", "NA")
+          # opts$tooltip_template <- "<b>{..gd_zone}</b><br/>{..gd_name} <br/> Riesgo: {riesgo}"
+        }
+      } else {
+        opts$palette_colors <- c("#dc2f02", "#9d0208", "#f48c06", "#e85d04", "#faa307")
+        opts$order_legend = c("Extremo (por alto nivel de la variable)",
+                              "Alto (por alto nivel de la variable)",
+                              "Alto (por bajo nivel de la variable)",
+                              "Medio (por bajo nivel de la variable)",
+                              "Medio (por alto nivel de la variable)"
+        )
+      }
+    }
+    if (input$what_table_input == "violencia_liderazgos") {
+      if (is.null(input$violencia_liderazgos_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        opts$var <- "Víctimas registradas"
+        opts$map_name <- "col_municipalities"
+        opts$map_name_layers <- "col_departments"
+
+        if (!is.null(input$violencia_liderazgos_departamento_input)) {
+          if (length(input$violencia_liderazgos_departamento_input) == 1) {
+            depto <- input$violencia_liderazgos_departamento_input
+            if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+            if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+            #"narino"
+            depto <- gsub(" ", "_",
+                          stri_trans_general(
+                            str = tolower(depto),
+                            id = "Latin-ASCII"))
+            opts$map_name <- paste0("col_municipalities_", depto)
+          }
+        }
+        #opts$tooltip_template <- "<b>{..gd_zone}</b><br/>{..gd_name}<br/> Escala de jenks: {jenks_class} <br/> Víctimas registradas: {Víctimas..registradas}"
+        opts$color_palette_sequential <- c("#ffe7b4", "#ff5a10")#c("#9d0208", "#dc2f02", "#e85d04", "#f48c06", "#faa307")
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+      }
+    }
+    if (input$what_table_input == "elecciones_municipios") {
+      if (!is.null(input$elecciones_municipios_vista_input)) {
+        if (input$elecciones_municipios_vista_input == "munic") {
+          if (is.null(input$elecciones_municipios_selector_input)) return()
+          if (sing_values$viz_active == "map") {
+            if (is.null(input$elecciones_municipios_col_input)) return()
+            var <- input$elecciones_municipios_col_input
+            opts$var <- var
+            if (input$elecciones_municipios_selector_input == "codmpio") {
+              opts$map_name <- "col_municipalities"
+              opts$map_name_layers <- "col_departments"
+              #opts$tooltip_template <- paste0("<b>{..gd_zone}</b><br/>{..gd_name} <br/>", var, ": {", var, "}")
+              if (!is.null(input$elecciones_municipios_departamento_input)) {
+                if (length(input$elecciones_municipios_departamento_input) == 1) {
+                  depto <- input$elecciones_municipios_departamento_input
+                  if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+                  if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+                  #"narino"
+                  depto <- gsub(" ", "_",
+                                stri_trans_general(
+                                  str = tolower(depto),
+                                  id = "Latin-ASCII"))
+                  opts$map_name <- paste0("col_municipalities_", depto)
+                }
+              }
+
+            } else {
+              opts$map_name <- "col_departments"
+              #opts$tooltip_template <- paste0("<b>{..gd_name}</b> <br/>", var, ": {", var, "}")
+            }
+
+            opts$color_palette_sequential <- c("#ffe7b4", "#00bc72")#c("#9d0208", "#dc2f02", "#e85d04", "#f48c06", "#faa307")
+          } else {
+            opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+          }
+        } else {
+          if (is.null(input$elecciones_partidos_selector_input)) return()
+          if (sing_values$viz_active == "map") {
+            var <- "partido"#"votos"
+            opts$var <- var
+            opts$color_palette_type <- "categorical"
+            if (input$elecciones_partidos_selector_input == "codmpio") {
+              opts$map_name <- "col_municipalities"
+              # opts$tooltip_template <- paste0("<b>{..gd_zone}</b><br/>{..gd_name} <br/><b>Partido con más votos:</b> {nomparti}<br/>", var, ": {", var, "}")
+              if (!is.null(input$elecciones_partidos_departamento_input)) {
+                if (length(input$elecciones_partidos_departamento_input) == 1) {
+                  depto <- input$elecciones_partidos_departamento_input
+                  if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+                  if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+                  #"narino"
+                  depto <- gsub(" ", "_",
+                                stri_trans_general(
+                                  str = tolower(depto),
+                                  id = "Latin-ASCII"))
+                  opts$map_name <- paste0("col_municipalities_", depto)
+                }
+              }
+
+            } else {
+              opts$map_name <- "col_departments"
+              # opts$tooltip_template <- paste0("<b>{..gd_name}</b> <br/><b>Partido con más votos:</b> {nomparti}<br/>", var, ": {", var, "}")
+            }
+
+            opts$color_palette_sequential <- c("#ffe7b4", "#00bc72")#c("#9d0208", "#dc2f02", "#e85d04", "#f48c06", "#faa307")
+          } else {
+            opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+          }
+        }
+      }
+    }
+    if (input$what_table_input == "censo_electoral") {
+      if (is.null(input$censo_electoral_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        if (is.null(input$censo_electoral_col_input)) return()
+        var <-  input$censo_electoral_col_input
+        opts$var <- var
+        if (input$censo_electoral_selector_input == "code_dane") {
+          opts$map_name <- "col_municipalities"
+          opts$map_name_layers <- "col_departments"
+          opts$color_palette_type <- "categorical"
+          opts$var <- paste0("rango_", input$censo_electoral_col_input)
+          #opts$tooltip_template <- paste0("<b>{..gd_zone}</b><br/>{..gd_name} <br/>", var, ": {", var, "}")
+          if (!is.null(input$censo_electoral_departamento_input)) {
+            if (length(input$censo_electoral_departamento_input) == 1) {
+              depto <- input$censo_electoral_departamento_input
+              if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+              if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+              #"narino"
+              depto <- gsub(" ", "_",
+                            stri_trans_general(
+                              str = tolower(depto),
+                              id = "Latin-ASCII"))
+              opts$map_name <- paste0("col_municipalities_", depto)
+            }
+          }
+          opts$legend_cat_order <-  c("0 - 1000", "1,000 - 10,000", "10,000 - 100,000", "100,000 - 500,000", ">500,000", NA)
+        } else {
+          opts$map_name <- "col_departments"
+          opts$color_palette_sequential <- c("#ffe7b4", "#00bc72")
+          #opts$tooltip_template <- paste0("<b>{..gd_name}</b> <br/>", var, ": {", var, "}")
+        }
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+      }
+    }
+    if (input$what_table_input == "grupos_ilegales") {
+      if (is.null(input$grupos_ilegales_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        var <- "Resgistros"
+        opts$var <- var
+        if (input$grupos_ilegales_selector_input == "codane") {
+          opts$map_name <- "col_municipalities"
+          opts$map_name_layers <- "col_departments"
+          #opts$tooltip_template <- paste0("<b>{..gd_zone}</b><br/>{..gd_name} <br/>", var, ": {", var, "}")
+          if (!is.null(input$grupos_ilegales_departamento_input)) {
+            if (length(input$grupos_ilegales_departamento_input) == 1) {
+              depto <- input$grupos_ilegales_departamento_input
+              if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+              if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+              #"narino"
+              depto <- gsub(" ", "_",
+                            stri_trans_general(
+                              str = tolower(depto),
+                              id = "Latin-ASCII"))
+              opts$map_name <- paste0("col_municipalities_", depto)
+            }
+          }
+
+        } else {
+          opts$map_name <- "col_departments"
+          #opts$tooltip_template <- paste0("<b>{..gd_name}</b> <br/>", var, ": {", var, "}")
+        }
+
+        opts$color_palette_sequential <- c("#faa307", "#9d0208")#c("#9d0208", "#dc2f02", "#e85d04", "#f48c06", "#faa307")
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+      }
+    }
+    if (input$what_table_input == "inscripcion_cedulas") {
+      if (is.null(input$inscripcion_cedulas_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        if (is.null(input$inscripcion_cedulas_col_input)) return()
+
+        var <- "rango_incripcion_de_cedulas"
+        var_tol <- "inscripcion.de.cedulas"
+        if (input$inscripcion_cedulas_col_input == "tasa_de_inscripcion_de_cedulas") {
+          var <- "Tasa de inscripción promedio"
+        }
+        opts$var <- var
+        if (input$inscripcion_cedulas_selector_input == "code_dane") {
+          opts$map_name <- "col_municipalities"
+          opts$map_name_layers <- "col_departments"
+
+          #opts$tooltip_template <- paste0("<b>{..gd_zone}</b><br/>{..gd_name} <br/>", var, ": {", var, "}")
+          if (!is.null(input$inscripcion_cedulas_departamento_input)) {
+            if (length(input$inscripcion_cedulas_departamento_input) == 1) {
+              depto <- input$inscripcion_cedulas_departamento_input
+              if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+              if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+              #"narino"
+              depto <- gsub(" ", "_",
+                            stri_trans_general(
+                              str = tolower(depto),
+                              id = "Latin-ASCII"))
+              opts$map_name <- paste0("col_municipalities_", depto)
+            }
+          }
+
+
+        } else {
+          opts$map_name <- "col_departments"
+          # opts$tooltip_template <- paste0("<b>{..gd_name}</b> <br/>", var, ": {", var_tol, "}")
+        }
+        if (input$inscripcion_cedulas_col_input == "tasa_de_inscripcion_de_cedulas") {
+          opts$color_palette_sequential <-  c("#faa307", "#9d0208")
+        } else {
+          opts$color_palette_type <- "categorical"
+          opts$legend_cat_order <- c("0 - 500", "500 - 1,000", "1,000 - 5,000", "5,000 - 10,000", "10,000 - 50,000", "50,000 - 100,000", ">100,000", NA)
+        }
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+      }
+    }
+    if (input$what_table_input == "participacion_mujer") {
+      if (is.null(input$participacion_mujer_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        var <- input$participacion_mujer_selector_input
+        if (var == "departamento") {
+          opts$var <- "Total"
+          opts$map_name <- "col_departments"
+
+          #opts$tooltip_template <- "<b>{..gd_name}</b> <br/> Total: {Total}"
+        }
+        opts$color_palette_sequential <- c("#ffe7b4", "#00bc72")
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+
+      }
+    }
+    if (input$what_table_input == "observacion_politica") {
+      if (is.null(input$observacion_politica_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        var <- "Observador"#"Total observadores"
+        opts$var <- var
+        opts$color_palette_type <- "categorical"
+        if (input$observacion_politica_selector_input == "code_dane") {
+          opts$map_name <- "col_municipalities"
+          opts$map_name_layers <- "col_departments"
+          #opts$tooltip_template <- paste0("<b>{..gd_zone}</b><br/>{..gd_name} <br/>", var, ": {", var, "}")
+          if (!is.null(input$observacion_politica_departamento_input)) {
+            if (length(input$observacion_politica_departamento_input) == 1) {
+              depto <- input$observacion_politica_departamento_input
+              if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+              if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+              #"narino"
+              depto <- gsub(" ", "_",
+                            stri_trans_general(
+                              str = tolower(depto),
+                              id = "Latin-ASCII"))
+              opts$map_name <- paste0("col_municipalities_", depto)
+            }
+          }
+        } else {
+          opts$map_name <- "col_departments"
+          #opts$tooltip_template <- paste0("<b>{..gd_name}</b> <br/>", var, ": {", var, "}")
+        }
+
+        #opts$color_palette_sequential <- c("#ffe7b4", "#00bc72")#c("#9d0208", "#dc2f02", "#e85d04", "#f48c06", "#faa307")
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+      }
+    }
+
+    if (input$what_table_input == "pilas_voto") {
+      if (is.null(input$pilas_voto_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        var <- "range_total"#"Total"
+        opts$var <- var
+        opts$color_palette_type <- "categorical"
+        if (input$pilas_voto_selector_input == "coddane") {
+          opts$map_name <- "col_municipalities"
+          opts$map_name_layers <- "col_departments"
+          #opts$tooltip_template <- paste0("<b>{..gd_zone}</b><br/>{..gd_name} <br/>", var, ": {", var, "}")
+          if (!is.null(input$censo_electoral_departamento_input)) {
+            if (length(input$censo_electoral_departamento_input) == 1) {
+              depto <- input$censo_electoral_departamento_input
+              if (depto == "Archipiélago de San Andrés") depto <- "san_andres"
+              if (depto == "Bogotá D.C.") depto <- "bogota_dc"
+              #"narino"
+              depto <- gsub(" ", "_",
+                            stri_trans_general(
+                              str = tolower(depto),
+                              id = "Latin-ASCII"))
+              opts$map_name <- paste0("col_municipalities_", depto)
+            }
+          }
+
+        } else {
+          opts$map_name <- "col_departments"
+          #opts$tooltip_template <- paste0("<b>{..gd_name}</b> <br/>", var, ": {", var, "}")
+        }
+        opts$legend_cat_order <-c("0 - 1", "1 - 10", "10 - 100", "> 100")
+        #opts$color_palette_sequential <- c("#fffeb4", "#ff5a19")#c("#9d0208", "#dc2f02", "#e85d04", "#f48c06", "#faa307")
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+      }
+    }
+
+    if (input$what_table_input == "financiacion") {
+      if (is.null(input$financiacion_selector_input)) return()
+      if (sing_values$viz_active == "map") {
+        var <- input$financiacion_selector_input
+        if (var == "departamento") {
+          opts$var <- paste0("Total ", input$financiacion_col_input)
+          opts$map_name <- "col_departments"
+          # opts$tooltip_template <- "<b>{..gd_name}</b> <br/> Total: {Total}"
+        }
+        opts$color_palette_sequential <- c("#ffe7b4", "#00bc72")
+      } else {
+        opts$palette_colors <- c("#FF5A19", "#0067F4", "#00BC72", "#A302FF", "#FF2C60", "#00D0FF")
+
+      }
+    }
+
+    if (sing_values$viz_active != "map") {
+      sort_viz <- "desc"
+      if (any(c("ano", "annio", "annoh") %in% names(df))) sort_viz <- "no"
+      per_col <- names(df)[ncol(df)-1]
+      other_opts <- list(
+        bar_graph_type = "stacked",
+        #collapse_rows = TRUE,
+        label_wrap = 100,
+        label_wrap_legend = 100,
+        data_labels_show = TRUE,
+        data_labels_align = 'middle',
+        data_labels_inside = TRUE,
+        percentage = ptg,
+        percentage_col = per_col,
+        sort = sort_viz,
+        percentage_name = "Porcentaje"
+
+      )
+      opts <- modifyList(opts, other_opts)
+    } else {
+      map_opts <- list(
+        caption = index_info(),
+        map_name_layers_params = list(color = "#000000"),
+        border_color = "#3a3a3a",
+        border_width = 0.3,
+        na_color = "#ffffff",
+        na_label = "NA",
+        map_zoom_snap = 0.25,
+        map_zoom_delta = 0.25,
+        zoom_min = 5.5,
+        format_sample_num = "1,234.9"
+        #zoom_max = 5.5,
+        #zoom_show = FALSE
+      )
+      opts <- modifyList(opts, map_opts)
+    }
+
+    opts
+  })
+
+  #
+  hgch_viz <- reactive({
+    if (is.null(sing_values$viz_active)) return()
+    req(viz_type())
+    req(theme_viz())
+    tryCatch({
+      hv <- do.call(viz_type(), theme_viz())
+      if (sing_values$viz_active != "map") {
+        hv <- hv |> hc_legend(   verticalAlign = "top" )
+        if (!is.null(index_info())) {
+          hv <- hv |>
+            hc_caption(text = index_info())
+        }
+      }
+      hv
+    },
+    error = function(e) {
+      return()
+    })
+
+  })
+
+  output$hgch_chart <- renderHighchart({
+    req(sing_values$viz_active)
+    if (sing_values$viz_active == "map") return()
+    req(hgch_viz())
+    hgch_viz()
+
+  })
+  output$lt_chart <- renderLeaflet({
+    req(sing_values$viz_active)
+    if (sing_values$viz_active != "map") return()
+    req(hgch_viz())
+    hgch_viz()
+  })
+
+  # output$mess_nod <- renderUI({
+  #   if (!is.null(hgch_viz())) return()
+  #   "No hay datos para los filtros seleccionados"
+  # })
+
+
+  output$viz_ui <- renderUI({
+    if (is.null(data_plot())) return("No hay información para los filtros seleccionados")
+    req(sing_values$viz_active)
+    heigh_viz <- 600
+    if (!is.null(input$dimension)) {
+      heigh_viz <- input$dimension[2] - 120
+    }
+
+    if (sing_values$viz_active == "map") {
+      shinycustomloader::withLoader(
+        leaflet::leafletOutput("lt_chart", height = heigh_viz),
+        type = "html", loader = "loader4"
+      )
+    } else {
+      shinycustomloader::withLoader(
+        highchartOutput("hgch_chart", height = heigh_viz),
+        type = "html", loader = "loader4"
+      )
+    }
+
+  })
+
+  # solo para violencia de liderazgos
+
+
+  var_v_lid <- reactive({
+    if(is.null(input$what_table_input)) return()
+    req(data_filter()$data_filter)
+    if (input$what_table_input != "violencia_liderazgos") return()
+    if (is.null(input$violencia_liderazgos_selector_input)) return()
+    c("depto", "hecho", "liderazgo", "genero", "ruralidad")
+  })
+
+
+
+  output$violencia_extra <- renderUI({
+    req(var_v_lid())
+    opts_new <- var_v_lid()
+    selectizeInput("extra_detail",
+                   "Información adicional",
+                   opts_new,
+                   selected = "hecho",
+                   multiple = TRUE)
+  })
+
+
+  output$violencia_tabla <- renderTable({
+    req(var_v_lid())
+    req(input$extra_detail)
+    if (is.null(data_filter()$data_filter)) return()
+    df <- data_filter()$data_filter
+    var <- input$extra_detail
+    df <- df[,var]
+    df <- dsdataprep::aggregation_data(data = df,
+                                       agg = "count",
+                                       group_var = var,
+                                       percentage = TRUE,
+                                       percentage_name = "%",
+                                       agg_name = "Conteo")
+    df
+  })
+
+  data_summary <- reactive({
+    if(is.null(input$what_table_input)) return()
+    req(data_filter()$data_filter)
+    df <- data_filter()$data_filter
+    tx <- NULL
+    if (input$what_table_input == "mapa_riesgo") {
+      if (is.null(input$mapa_riesgo_selector_input)) return()
+      if (input$mapa_riesgo_selector_input != "annoh") {
+        df <- df |> group_by(riesgo) |> summarise(total = n())
+        df$riesgo <- factor(df$riesgo,
+                            levels = c("Medio (por alto nivel de la variable)",
+                                       "Alto (por alto nivel de la variable)",
+                                       "Extremo (por alto nivel de la variable)"))
+        df <- df[order(df$riesgo), ]
+        tx <- HTML(paste0(
+          paste0("<div>
+                 <span class = 'subtitle-detalle'>", df$riesgo,
+                 ":</span><span class='info-det'> ", df$total,
+                 " municipios</span></div>"),
+          collapse = "<br/>"))
+      } else {
+        df <- df |> group_by(riesgo, annoh) |> summarise(total = n())
+        df$riesgo <- factor(df$riesgo,
+                            levels = c("Medio (por alto nivel de la variable)",
+                                       "Alto (por alto nivel de la variable)",
+                                       "Extremo (por alto nivel de la variable)"))
+        df <- df[order(df$riesgo), ]
+        tx <- info_text(df, "annoh", "riesgo", "total", "municipios")
+      }
+    }
+    if (input$what_table_input == "elecciones_municipios") {
+      if (!is.null(input$elecciones_municipios_vista_input)) {
+        if (input$elecciones_municipios_vista_input == "munic") {
+          if (is.null(input$elecciones_municipios_selector_input)) return()
+          df <- df[,c("eleccion", "annoh", "votos", "censo", "participacion", "abstencion")]
+          df_votos <- df |>
+            group_by(eleccion, annoh) |>
+            summarise(votos = format(sum(votos, na.rm = TRUE), big.mark = ","))
+          tx_votos <- info_text(df_votos, "annoh", "eleccion", "votos", " ")
+          df_censo <- df |>
+            group_by(eleccion, annoh) |>
+            summarise(censo = format(sum(censo, na.rm=TRUE), big.mark = ","))
+          tx_censo <- info_text(df_censo, "annoh", "eleccion", "censo", " ")
+          df_part <- df |>
+            group_by(eleccion, annoh) |>
+            summarise(part = round(mean(participacion, na.rm=TRUE), 2))
+          tx_part <- info_text(df_part, "annoh", "eleccion", "part", " ")
+          df_abs <- df |>
+            group_by(eleccion, annoh) |>
+            summarise(abs = round(mean(abstencion, na.rm=TRUE), 2))
+          tx_abs <- info_text(df_abs, "annoh", "eleccion", "abs", " ")
+
+          tx <- HTML(paste0("Votos: <br/>", tx_votos,
+                            "Censo electoral: <br/>", tx_censo,
+                            "% promedio de participación: <br/>", tx_part,
+                            "% promedio de abstención: <br/>", tx_abs))
+
+        } else if (input$elecciones_municipios_vista_input == "partido") {
+          df <- df_partido() |>
+            group_by(nomdepto, nomparti) |>
+            summarise(total = sum(votos)) |>
+            ungroup() |>
+            group_by(nomdepto) |>
+            top_n(5, total)
+          tx <- info_text(df, "nomdepto", "nomparti", "total", "")
+        } else {
+          #df <- df_candidatos()
+          tx <- "candidatos"
+        }
+      }
+    }
+    if (input$what_table_input == "violencia_liderazgos") {
+      if (is.null(input$violencia_liderazgos_selector_input)) return()
+      var <- c(input$violencia_liderazgos_selector_input,
+               input$violencia_liderazgos_cruce_input)
+      if (length(var) == 1) {
+        df <- df |> summarise(total = n())
+        tx <- HTML(paste0(
+          paste0("<div>
+                 <span class = 'subtitle-detalle'>", "Víctimas registradas",
+                 ":</span><span class='info-det'> ", df$total,
+                 "</span></div>"),
+          collapse = "<br/>"))
+      }
+    }
+
+    if (input$what_table_input == "censo_electoral") {
+      if (is.null(input$censo_electoral_selector_input)) return()
+
+      df <- df |> summarise(`Total hombres` = sum(hombres, na.rm = T),
+                            `Total mujeres` = sum(mujeres, na.rm = T),
+                            `Total mesas` = sum(mesas, na.rm = T))
+      tx <- HTML(paste0(
+        paste0("<div>
+         <span class = 'subtitle-detalle'>", "Total",
+               ":</span><span class='info-det'> ",
+               format(sum(df$`Total hombres`, df$`Total mujeres`), big.mark = ","),
+               "</span><br/>
+                 <span class = 'subtitle-detalle'>", "Total hombres",
+               ":</span><span class='info-det'> ",
+               format(df$`Total hombres`, big.mark = ","),
+               "</span><br/>
+                 <span class = 'subtitle-detalle'>", "Total mujeres",
+               ":</span><span class='info-det'> ",
+               format(df$`Total mujeres`, big.mark = ","),
+               "</span><br/>
+                 <span class = 'subtitle-detalle'>", "Total mesas",
+               ":</span><span class='info-det'> ",
+               format(df$`Total mesas`, big.mark = ","),
+               "</span>
+                 </div>"),
+        collapse = "<br/>"))
+
+    }
+    if (input$what_table_input == "grupos_ilegales") {
+      if (is.null(input$grupos_ilegales_selector_input)) return()
+      df <- df |> group_by(grupo_armado, categoria) |> summarise(total = n())
+      tx <- info_text(df, "grupo_armado", "categoria", "total", "")
+    }
+
+    if (input$what_table_input == "inscripcion_cedulas") {
+      if (is.null(input$inscripcion_cedulas_selector_input)) return()
+
+      df <- df |> summarise(incripcion_de_cedulas = sum(incripcion_de_cedulas, na.rm = T),
+                            tasa_de_inscripcion_de_cedulas = mean(tasa_de_inscripcion_de_cedulas, na.rm = T))
+      tx <- HTML(paste0(
+        paste0("<div>
+                 <span class = 'subtitle-detalle'>", "Inscripción de cédulas",
+               ":</span><span class='info-det'> ",
+               format(df$incripcion_de_cedulas, big.mark = ","),
+               "</span><br/>
+                 <span class = 'subtitle-detalle'>", "Tasa de Inscripción de cedulas",
+               ":</span><span class='info-det'> ",
+               format(df$tasa_de_inscripcion_de_cedulas, big.mark = ","),
+               "</span><br/>
+                 </div>"),
+        collapse = "<br/>"))
+
+    }
+
+    if (input$what_table_input == "participacion_mujer") {
+      if (is.null(input$participacion_mujer_selector_input)) return()
+      df <- df |> group_by(genero, electo_a_ganador_a) |> summarise(total = n())
+      tx <- info_text(df, "genero", "electo_a_ganador_a", "total", "")
+    }
+
+    if (input$what_table_input == "observacion_politica") {
+      if (is.null(input$observacion_politica_selector_input)) return()
+      df <- df |> group_by(departamento, eleccion) |> summarise(total = n())
+      tx <- info_text(df, "departamento", "eleccion", "total", "")
+    }
+
+    if (input$what_table_input == "pilas_voto") {
+      if (is.null(input$pilas_voto_selector_input)) return()
+      if (input$pilas_voto_selector_input %in% c("departamento", "coddane", "ano", "tipo_de_eleccion")) {
+        df <- df |> group_by(ano, tipo_de_eleccion) |> summarise(total = n())
+        tx <- info_text(df, "ano", "tipo_de_eleccion", "total", "")
+      }
+      if (input$pilas_voto_selector_input %in% "irregularidad") {
+        df <- df |> group_by(ano, irregularidad) |> summarise(total = n())
+        tx <- info_text(df, "ano", "irregularidad", "total", "")
+      }
+    }
+
+    if (input$what_table_input == "financiacion") {
+      if (is.null(input$financiacion_selector_input)) return()
+      options(scipen=999)
+      df <- df |>
+        group_by(ingresos_gastos) |>
+        summarise(total = sum(ing_valor, na.rm = T))
+      tx <- HTML(paste0(
+        paste0("<div>
+                 <span class = 'subtitle-detalle'>", df$ingresos_gastos[1],
+               ":</span><span class='info-det'> ",
+               format(df$total[1], big.mark = ","),
+               "</span><br/>
+                 <span class = 'subtitle-detalle'>", df$ingresos_gastos[2],
+               ":</span><span class='info-det'> ",
+               format(df$total[2], big.mark = ","),
+               "</span><br/>
+                 </div>"),
+        collapse = "<br/>"))
+    }
+
+    tx
+  })
+
+  output$summary <- renderUI({
+    req(data_summary())
+    HTML(
+      paste0(
+        div(
+          div(class = "title-detalle",
+              "Total Nacional "),
+          div(
+            data_summary()
+          )
+        )
+      )
+    )
+  })
+
+  # output$test <- renderPrint({
+  #   if (is.null(data_plot())) return()
+  #   viz_type()
+  # })
+
+
+
+  output$downloads <- renderUI({
+    if (is.null(sing_values$viz_active)) return()
+    dsmodules::downloadImageUI("download_viz",
+                               dropdownLabel = paste0(img(src= 'descarga-icon-w.svg', class = "img-down"), "Gráfico"),
+                               formats = c("jpeg", "pdf", "png", "html"),
+                               display = "dropdown",
+                               text = "Descarga")
+
+  })
+
+  output$down_data <- renderUI({
+    if (is.null(data_filter()$data_filter)) return()
+    dsmodules::downloadTableUI("download_table",
+                               dropdownLabel = paste0(img(src= 'descarga-icon-w.svg', class = "img-down"), "Datos"),
+                               formats = c("csv", "xlsx"),
+                               display = "dropdown",
+                               text = "Descarga")
+
+  })
+
+  observe({
+    dsmodules::downloadImageServer("download_viz",
+                                   element = reactive(hgch_viz()),
+                                   lib = "highcharter",
+                                   formats = c("jpeg", "pdf", "png", "html"),
+                                   file_prefix = "plot")
+    dsmodules::downloadTableServer("download_table",
+                                   element = reactive(data_filter()$data_filter),
+                                   formats = c("csv", "xlsx"))
+  })
+
+
+
+
+
+}
+
+shinyApp(ui, server)
