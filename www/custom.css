@@ -136,6 +136,7 @@ height: 30px !important;
  border: 1px solid #C1C0C0;
  margin: 5% 0;
  padding: 5px 5px;
+ width: 320px;
 }
 
 .section_0 {
@@ -193,8 +194,5 @@ border-radius: 11px;
   margin: 15px 20px;
 }
 
-.leaflet-control.map-titles {
-  transform: none !important;
-  left: auto !important;
-}
+
 

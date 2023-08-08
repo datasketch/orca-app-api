@@ -2,6 +2,8 @@ library(httr)
 library(curl)
 library(jsonlite)
 
+#names_data <- "Inspecciones"
+#names_data <- "Aprehensiones"
 get_data <- function(names_data) {
   get_token <-
     httr::POST(
@@ -15,7 +17,7 @@ get_data <- function(names_data) {
   
   
   #url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2000-01-01&fechaFinal=', end_p)
-  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2023-07-31&fechaFinal=', end_p)
+  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2023-08-08&fechaFinal=', end_p)
   respose <-
     httr::GET(
       url,
@@ -39,6 +41,7 @@ get_data <- function(names_data) {
     result$fecha_am <- format(result$fecha_inspeccion, "%Y-%m")
     max(result$fecha_inspeccion)
     result$mcipio <- trimws(result$mcipio)
+    result$depto[result$depto == "SAN ANDRES ISLAS"] <- "ARCHIPIELAGO DE SAN ANDRES, PROVIDENCIA Y SANTA CATALINA"
     #readr::write_csv(result, "data/inspecciones.csv")
     } else {
     result$fecha_acta <- lubridate::dmy(result$fecha_acta)
@@ -52,6 +55,7 @@ get_data <- function(names_data) {
     result$clase_producto[result$clase_producto %in% c("CIGARRILLO EXTRANJERO", "CIGARRILLO NACIONAL")] <- "CIGARRILLOS"
     result$clase_producto[result$clase_producto %in% c("CERVEZA EXTRANJERA", "CERVEZA NACIONAL")] <- "CERVEZAS"
     result$cierre_establecimiento <- ifelse(result$cierre_establecimiento, "SÍ", "NO")
+    result$depto[result$depto == "SAN ANDRES ISLAS"] <- "ARCHIPIELAGO DE SAN ANDRES, PROVIDENCIA Y SANTA CATALINA"
    #readr::write_csv(result, "data/aprehensiones.csv")
     }
     data <- data_save[[names_data]] |> bind_rows(result)

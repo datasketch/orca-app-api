@@ -7,6 +7,7 @@ library(parmesan)
 library(vctrs)
 library(dsmodules)
 library(hgchmagic) #767c3867535994f1a1fd8c24594d40db3128843d
+library(leaflet.extras)
 library(ltgeo)
 library(dsopts)
 # dsvizopts bff1582f4b6e17600bf92937adf100270c42b91d
@@ -64,7 +65,8 @@ ui <-  fluidPage(
                                div(class = "viz-center",
                                    div(
                                      uiOutput("down_map"),
-                                     leafletOutput("map_extra", height = 300)
+                                     leafletOutput("map_extra", height = 300),
+                                     uiOutput("info_map")
                                    )
                                )
                            ),
@@ -72,11 +74,14 @@ ui <-  fluidPage(
                                div(class = "viz-center",
                                    div(
                                      uiOutput("down_tree"),
-                                     highchartOutput("treemap_extra", height = 280)
+                                     highchartOutput("treemap_extra", height = 280),
+                                     uiOutput("info_tree")
                                    )
                                )
                            ),
-                          uiOutput("viz_extra")
+                           uiOutput("viz_extra"),
+                           uiOutput("click_aprhtree")#,
+                          #verbatimTextOutput("test")
                        )
                   )
               )
@@ -316,12 +321,19 @@ server <- function(input, output, session) {
     df <- data_filter()
     if (id_data() == "Inspecciones") {
       var <- "depto"
+      var_label <- "Departamento"
       if (actual_but$active %in% c("line", "bar")) {
         var <- "anio"
+        var_label <- "Año"
         if (!is.null(input$anioId)) {
-          if (length(input$anioId) == 1) var <- "fecha_am"
+          if (length(input$anioId) == 1) {
+            var <- "fecha_am"
+            var_label <- "Fecha"
+          }
         }
-        if (!is.null(input$deptosId)) var <- c("depto", var)
+        if (!is.null(input$deptosId)) {
+          var <- c("depto", var)
+        }
       }
       df <- dsdataprep::aggregation_data(df,
                                          agg = "count",
@@ -330,12 +342,29 @@ server <- function(input, output, session) {
                                          percentage = TRUE, 
                                          percentage_name = "porcentaje"
       )
+      df$porcentaje <- round(df$porcentaje, 2)
+      #if (actual_but$active != "map") {
+      if (ncol(df) == 3) {
+        df$..labels <- paste0(var_label, ": ", df[[var]], 
+                              "<br/>Total visitas: ", sitools::f2si(df$conteo),
+                              "<br/>Porcentaje: ", df$porcentaje)
+      } else {
+        df$..labels <- paste0("Departamento", ": ", df$depto,
+                              "<br/> Año: ", df[[2]],
+                              "<br/>Total visitas: ", sitools::f2si(df$conteo),
+                              "<br/>Porcentaje: ", df$porcentaje, "%")
+      }
+      df <- df[, c(var, "conteo", "..labels")]
+      #}
+      # if (actual_but$active == "map") {
+      #   df$..tooltip <- HTML(df$..labels)
+      # }
     } else {
       var <- "depto"
       if (actual_but$active %in% c("line", "bar")) {
         var <- c("clase_producto", "anio")
-        if (!is.null(input$anioId)) {
-          if (length(input$anioId) == 1) var <- c("clase_producto", "fecha_ym")
+        if (!is.null(input$apre_anioId)) {
+          if (length(input$apre_anioId) == 1) var <- c("clase_producto", "fecha_ym")
         }
         # if (!is.null(input$deptosId)) var <- c("depto", var)
       }
@@ -348,7 +377,7 @@ server <- function(input, output, session) {
           var_num <- input$apre_numId 
         }
       }
-  
+      
       df <- dsdataprep::aggregation_data(df,
                                          agg = agg,
                                          #agg_name = "conteo",
@@ -357,6 +386,17 @@ server <- function(input, output, session) {
                                          percentage = TRUE,
                                          percentage_name = "porcentaje"
       )
+      df$porcentaje <- round(df$porcentaje, 2)
+      if (actual_but$active != "map") {
+        df$..labels <- paste0("Clase producto: ", df[[1]], 
+                              "<br/>Año: ", df[[2]], "<br/>",
+                              "Total", ": ",  sitools::f2si(df[[3]]), 
+                              "<br/>Porcentaje: ", df[[4]], "%")
+      } else {
+        df$..labels <- paste0("Departamento: ", df[[1]], 
+                              "<br/>Total", ": ",  sitools::f2si(df[[2]]), 
+                              "<br/>Porcentaje: ", df[[3]], "%")
+      }
     }
     # if ("code_depto" %in% names(df)) {
     #   df$code_depto <- sprintf("%02d", df$code_depto)
@@ -367,6 +407,7 @@ server <- function(input, output, session) {
     if ("anio" %in% names(df)) {
       df$anio <- as.character(df$anio)
     }
+    
     df
   })
   
@@ -375,7 +416,7 @@ server <- function(input, output, session) {
     if (is.null(id_data())) return()
     if (is.null(actual_but$active)) return()
     req(data_viz())
-   
+    
     if (nrow(data_viz()) == 0) return()
     type <- "DatNum"
     if (ncol(data_viz()) > 3) type <- "CatDatNum"
@@ -391,7 +432,7 @@ server <- function(input, output, session) {
     if (is.null(actual_but$active)) return()
     #req(viz_type())
     viz <- paste0("hgchmagic::hgch_", actual_but$active, "_", viz_type())
-    if (actual_but$active == "map") viz <- "ltgeo::lt_choropleth"
+    if (actual_but$active == "map") viz <- "ltgeo::lt_choropleth_GnmNum"
     print(viz)
     viz
   })
@@ -428,32 +469,41 @@ server <- function(input, output, session) {
         data = data_viz(),
         bar_graph_type = "stacked",
         label_wrap = 100,
-        label_wrap_legend = 100
+        label_wrap_legend = 100,
+        collapse_rows = TRUE
+        #
       )
     } else {
       opts <- list(
         data = data_viz(),
-        map_name = "col_departments",
+        map_name = "col_large",
+        collapse_rows = TRUE,
         map_tiles = "CartoDB",
-        border_color = "#3a3a3a",
-        border_width = 0.3,
-        na_color = "#ffffff",
-        na_label = "NA",
         map_zoom_snap = 0.25,
         map_zoom_delta = 0.25,
-        zoom_min = 5.5,
-        caption = add_info(),
-        color_palette_sequential = c("#d7d1ff", "#4b3c69")
+        palette_colors = c("#d7d1ff", "#4b3c69"),
+        #percentage_intra = T,
+        map_min_zoom = 5.25,
+        map_max_zoom = 12
+        # border_color = "#3a3a3a",
+        # border_width = 0.3,
+        # na_color = "#ffffff",
+        # na_label = "NA",
+        # map_zoom_snap = 0.25,
+        # map_zoom_delta = 0.25,
+        # zoom_min = 5.5,
+        # caption = add_info(),
+        # color_palette_sequential = c("#d7d1ff", "#4b3c69")
       )
       
-      if (id_data() == "Inspecciones") {
-        var <- "conteo"
-      } else {
-        req(input$apre_numId)
-        var <- "count"
-        if (input$apre_numId != "cantidad") var <- input$apre_numId
-      }
-      opts$var <- var
+      # if (id_data() == "Inspecciones") {
+      #   var <- "conteo"
+      # } else {
+      #   req(input$apre_numId)
+      #   var <- "count"
+      #   if (input$apre_numId != "cantidad") var <- input$apre_numId
+      # }
+      # opts$var <- var
       
     }
     
@@ -468,7 +518,6 @@ server <- function(input, output, session) {
   
   viz_down <- reactive({
     print("xxxxxxxx")
-    print(data_viz())
     print(viz_func())
     req(data_viz())
     req(viz_func())
@@ -583,6 +632,7 @@ server <- function(input, output, session) {
                                           percentage = TRUE, 
                                           percentage_name = "porcentaje"
       )
+      df1$..labels <- "Da click para más detalle"
       df1$depto[df1$depto == "BOGOTA D.C."] <- "BOGOTA"
       df2 <- dsdataprep::aggregation_data(df,
                                           agg = "count",
@@ -591,6 +641,7 @@ server <- function(input, output, session) {
                                           percentage = TRUE, 
                                           percentage_name = "porcentaje"
       )
+      df2$..labels <- "Da click para más detalle"
       df <- list(
         "deptos" = df1,
         "tipo" = df2
@@ -612,6 +663,7 @@ server <- function(input, output, session) {
                                           percentage = TRUE,
                                           percentage_name = "porcentaje"
       )
+      df1$..labels <- "Da click para más detalle"
       df1$depto[df1$depto == "BOGOTA D.C."] <- "BOGOTA"
       df2 <- dsdataprep::aggregation_data(df,
                                           agg = agg,
@@ -621,6 +673,7 @@ server <- function(input, output, session) {
                                           percentage = TRUE,
                                           percentage_name = "porcentaje"
       )
+      df2$..labels <- "Da click para más detalle"
       df3 <- dsdataprep::aggregation_data(df,
                                           agg = agg,
                                           #agg_name = "conteo",
@@ -629,6 +682,7 @@ server <- function(input, output, session) {
                                           percentage = TRUE,
                                           percentage_name = "porcentaje"
       )
+      df3$..labels <- "Da click para más detalle"
       df <- list(
         "deptos" = df1,
         "cierre" = df2,
@@ -637,6 +691,30 @@ server <- function(input, output, session) {
     }
     
     df
+  })
+  
+  info_click_map <- reactive({
+    if (is.null(id_data())) return()
+    if (is.null(input$map_extra_shape_click)) return()
+    req(data_extra_deptos())
+    df <- data_extra_deptos()$deptos
+    if (nrow(df) == 0) return()
+    df <- df |> filter(depto %in% stringi::stri_trans_general(input$map_extra_shape_click$id, "Latin-ASCII"))
+    if (id_data() == "Inspecciones") {
+      tx <- paste0("Departamento: ", df$depto, 
+                   "<br/>Total visitas: ", sitools::f2si(df$conteo),
+                   "<br/>Porcentaje: ", round(df$porcentaje, digits = 2))
+    } else {
+      tx <- paste0("Departamento: ", df$depto, 
+                   "<br/>", input$apre_numId ,": ", sitools::f2si(df[[2]]),
+                   "<br/>Porcentaje: ", round(df$porcentaje, digits = 2))
+    }
+    tx
+  })
+  
+  output$info_map <- renderUI({
+    req(info_click_map())
+    HTML(info_click_map())
   })
   
   map_down <- reactive({
@@ -657,24 +735,28 @@ server <- function(input, output, session) {
       }
     }
     
-    ltgeo::lt_choropleth(data = df, 
-                         var = var_num,
-                         title = tx,
-                         title_size = 10,
-                         text_family = "Fira Sans",
-                         title_family = "Fira Sans",
-                         map_name = "col_departments",
-                         map_tiles = "CartoDB",
-                         zoom_show = FALSE,
-                         border_color = "#3a3a3a",
-                         border_width = 0.3,
-                         na_color = "#ffffff",
-                         na_label = "NA",
-                         map_zoom_snap = 0.25,
-                         map_zoom_delta = 0.25,
-                         zoom_min = 3.5,
-                         legend_show = FALSE,
-                         color_palette_sequential = c("#d7d1ff", "#4b3c69"))
+    ltgeo::lt_choropleth_GnmNum(data = df, 
+                                #var = var_num,
+                                title = tx,
+                                title_size = 10,
+                                text_family = "Fira Sans",
+                                title_family = "Fira Sans",
+                                map_name = "col_large",
+                                legend_show = FALSE,
+                                palette_colors = c("#d7d1ff", "#4b3c69"),
+                                collapse_rows = TRUE,
+                                map_tiles = "CartoDB"
+                                #                        zoom_show = FALSE,
+                                #                        border_color = "#3a3a3a",
+                                #                        border_width = 0.3,
+                                #                        na_color = "#ffffff",
+                                #                        na_label = "NA",
+                                #                        map_zoom_snap = 0.25,
+                                #                        map_zoom_delta = 0.25,
+                                #                        zoom_min = 3.5,
+                                #                        legend_show = FALSE,
+                                #                        color_palette_sequential = c("#d7d1ff", "#4b3c69")
+    )
   })
   
   output$map_extra <- renderLeaflet({
@@ -693,16 +775,47 @@ server <- function(input, output, session) {
     dsmodules::downloadImageServer("download_map", element = reactive(map_down()), lib = "highcharter", formats = c("jpeg", "pdf", "png", "html"), file_prefix = "plot")
   })
   
+  info_click_tree <- reactive({
+    if (is.null(id_data())) return()
+    req(data_extra_deptos())
+    
+    if (id_data() == "Inspecciones") {
+      if (is.null(input$id_ins)) return()
+      df <- data_extra_deptos()$tipo
+      if (nrow(df) == 0) return()
+      df <- df |> filter(tipo_establecimiento %in% input$id_ins$id)
+      tx <- paste0("Tipo de visita: ", df[[1]], 
+                   "<br/>Total visitas: ", sitools::f2si(df$conteo),
+                   "<br/>Porcentaje: ", round(df$porcentaje, digits = 2))
+    } else {
+      if (is.null(input$id_apr)) return()
+      df <- data_extra_deptos()$clase
+      if (nrow(df) == 0) return()
+      df <- df |> filter(clase_producto %in% gsub("<br/>", " ", input$id_apr$id))
+      tx <- paste0("Clase de aprehensión: ", df[[1]], 
+                   "<br/>", input$apre_numId ,": ", sitools::f2si(df[[2]]),
+                   "<br/>Porcentaje: ", round(df$porcentaje, digits = 2))
+    }
+    tx
+  })
+  
+  output$info_tree <- renderUI({
+    req(info_click_tree())
+    HTML(info_click_tree())
+  })
+  
   tree_down <- reactive({
     if (is.null(id_data())) return()
     req(data_extra_deptos())
     df <- NULL
     if (id_data() == "Inspecciones") {
+      id_click <- "id_ins"
       df <- data_extra_deptos()$tipo
-      df <- df |> arrange(-conteo) |> filter(tipo_establecimiento != "(NA)")
-      df$tipo_establecimiento[6:(nrow(df))] <- "Otros"
+      df <- df |> arrange(-conteo) #|> filter(tipo_establecimiento != "(NA)")
+      #df$tipo_establecimiento[6:(nrow(df))] <- "Otros"
       tx <- "Visitas de control realizadas en Colombia por tipo de establecimiento"
     } else {
+      id_click <- "id_apr"
       df <- data_extra_deptos()$clase
       tx <- "Actas de aprehensión realizadas en Colombia por clase del producto"
     }
@@ -710,11 +823,15 @@ server <- function(input, output, session) {
     hgch_treemap_CatNum(data = df, 
                         title = tx, 
                         title_size = 10, 
+                        collapse_rows = TRUE,
                         data_labels_align = 'middle',
                         data_labels_inside = TRUE,
                         data_labels_show = TRUE,
                         text_family = "Fira Sans",
-                        title_family = "Fira Sans")
+                        title_family = "Fira Sans",
+                        shiny_cursor = "pointer",
+                        shiny_clickable = TRUE,
+                        shiny_input_name = id_click)
   })
   
   output$treemap_extra <- renderHighchart({
@@ -733,6 +850,29 @@ server <- function(input, output, session) {
     dsmodules::downloadImageServer("download_tree", element = reactive(tree_down()), lib = "highcharter", formats = c("jpeg", "pdf", "png", "html"), file_prefix = "plot")
   })
   
+  
+  info_click_aprhtree <- reactive({
+    if (is.null(id_data())) return()
+    req(data_extra_deptos())
+    
+    if (id_data() == "Inspecciones") return()
+    
+    if (is.null(input$hcClicked)) return()
+    df <- data_extra_deptos()$cierre
+    if (nrow(df) == 0) return()
+    df <- df |> filter(cierre_establecimiento %in% gsub("<br/>", " ", input$hcClicked$id))
+    tx <- paste0("Cierre de establecimiento: ", df[[1]], 
+                 "<br/>", input$apre_numId ,": ", sitools::f2si(df[[2]]),
+                 "<br/>Porcentaje: ", round(df$porcentaje, digits = 2))
+    
+    tx
+  })
+  
+  output$click_aprhtree <- renderUI({
+    req(info_click_aprhtree())
+    HTML(info_click_aprhtree())
+  })
+  
   apreh_tree_down <- reactive({
     if (is.null(id_data())) return()
     req(data_extra_deptos())
@@ -745,10 +885,13 @@ server <- function(input, output, session) {
                         title = "Actas de aprehensión por cierre de establecimiento", 
                         data_labels_show = TRUE,
                         title_size = 10,
+                        collapse_rows = TRUE,
                         data_labels_align = 'middle',
                         data_labels_inside = TRUE,
                         text_family = "Fira Sans",
-                        title_family = "Fira Sans")
+                        title_family = "Fira Sans",
+                        shiny_cursor = "pointer",
+                        shiny_clickable = TRUE)
   })
   
   output$treemap_extra_apreh <- renderHighchart({
@@ -783,7 +926,7 @@ server <- function(input, output, session) {
   })
   
   output$test <- renderPrint({
-    data_extra_deptos()
+    input$map_extra_shape_click
   })
   
 }
