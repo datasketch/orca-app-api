@@ -1,4 +1,4 @@
-webshot::install_phantomjs()
+webshot::install_phantomjs(force = TRUE)
 library(tidyverse)
 library(shiny)
 library(shinyWidgets)
@@ -13,7 +13,7 @@ library(dsopts)
 # dsvizopts bff1582f4b6e17600bf92937adf100270c42b91d
 # homodatum 6993e3f907579fc72cbbf605d1dd1184330f451b
 
-source("call-data.R")
+#source("call-data.R")
 source("gen-func.R")
 ui <-  fluidPage(
   tags$head(
@@ -115,7 +115,7 @@ server <- function(input, output, session) {
     if (!is.null(data[[id_data()]])) {
       return()
     } else {
-      data[[id_data()]] <- get_data(id_data())
+      data[[id_data()]] <- readr::read_csv(paste0("data/", tolower(id_data()), ".csv"))
     }
     
   })
@@ -276,11 +276,14 @@ server <- function(input, output, session) {
     req(list_inputs())
     data <- data[[id_data()]]
     ls <- list_inputs()
+    if ("anio" %in% names(data)) {
+      data$anio <- as.character(data$anio)
+    }
     df <- dsdataprep::data_filter(data = dplyr::as_tibble(data),
                                   dic = dplyr::as_tibble(dic_load()),
                                   var_inputs = ls,
                                   special_placeholder = NULL)
-    
+   
     df
   })
   
