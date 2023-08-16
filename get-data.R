@@ -1,7 +1,7 @@
 library(httr)
 library(curl)
 library(jsonlite)
-
+library(tidyverse)
 
 get_data <- function(names_data) {
   get_token <-
