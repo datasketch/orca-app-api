@@ -1,4 +1,4 @@
-webshot::install_phantomjs(force = TRUE)
+webshot::install_phantomjs(force = F)
 library(tidyverse)
 library(shiny)
 library(shinyWidgets)
@@ -115,7 +115,7 @@ server <- function(input, output, session) {
     if (!is.null(data[[id_data()]])) {
       return()
     } else {
-      data[[id_data()]] <- readr::read_csv(paste0("data/", tolower(id_data()), ".csv"))
+      data[[id_data()]] <- readr::read_csv(paste0("https://raw.githubusercontent.com/datasketch/orca-app-api/main/data/", tolower(id_data()), ".csv"))
     }
     
   })
