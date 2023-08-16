@@ -1,4 +1,4 @@
-webshot::install_phantomjs(force = F)
+webshot::install_phantomjs(force = TRUE)
 library(tidyverse)
 library(shiny)
 library(shinyWidgets)
@@ -9,10 +9,9 @@ library(dsmodules)
 library(hgchmagic) #767c3867535994f1a1fd8c24594d40db3128843d
 library(leaflet.extras)
 library(ltgeo)
-library(dsopts)
 # dsvizopts bff1582f4b6e17600bf92937adf100270c42b91d
 # homodatum 6993e3f907579fc72cbbf605d1dd1184330f451b
-
+Sys.setenv(OPENSSL_CONF="/dev/null")
 #source("call-data.R")
 source("gen-func.R")
 ui <-  fluidPage(
