@@ -15,9 +15,19 @@ get_data <- function(names_data) {
   
   end_p = Sys.Date()
   
+  data_save <- list(
+    "Inspecciones" = read_csv("data/inspecciones.csv"),
+    "Aprehensiones" = read_csv("data/aprehensiones.csv")
+  )
+  last_date <- NULL
+  if (names_data == "Inspecciones") {
+    last_date <- max(data_save[[names_data]]$fecha_inspeccion, na.rm = T) 
+  } else {
+  last_date <- max(data_save$Aprehensiones$id_aprehension, na.rm = T)
+  }
   
   #url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2000-01-01&fechaFinal=', end_p)
-  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2023-08-09&fechaFinal=', end_p)
+  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=',last_dates,'&fechaFinal=', end_p)
   respose <-
     httr::GET(
       url,
@@ -28,10 +38,7 @@ get_data <- function(names_data) {
   
   
   
-  data_save <- list(
-    "Inspecciones" = read_csv("data/inspecciones.csv"),
-    "Aprehensiones" = read_csv("data/aprehensiones.csv")
-  )
+  
   
   if (identical(result, list())) {
     data <- data_save[[names_data]]
