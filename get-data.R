@@ -23,7 +23,7 @@ get_data <- function(names_data) {
   if (names_data == "Inspecciones") {
     last_date <- max(data_save[[names_data]]$fecha_inspeccion, na.rm = T) 
   } else {
-  last_date <- max(data_save$Aprehensiones$id_aprehension, na.rm = T)
+  last_date <- max(data_save$Aprehensiones$fecha_acta, na.rm = T)
   }
   
   #url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2000-01-01&fechaFinal=', end_p)
@@ -46,9 +46,6 @@ get_data <- function(names_data) {
     if (names_data == "Inspecciones") {
       result$fecha_inspeccion <- lubridate::dmy(result$fecha_inspeccion)
       result$anio <- lubridate::year(result$fecha_inspeccion)
-      print("$$$$$$$$$")
-      dx <- result |> filter(anio == "2023")
-      print(nrow(dx))
       result$fecha_am <- format(result$fecha_inspeccion, "%Y-%m")
       max(result$fecha_inspeccion)
       result$mcipio <- trimws(result$mcipio)
