@@ -27,7 +27,7 @@ get_data <- function(names_data) {
   }
   
   #url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2000-01-01&fechaFinal=', end_p)
-  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=',last_dates,'&fechaFinal=', end_p)
+  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=',last_date,'&fechaFinal=', end_p)
   respose <-
     httr::GET(
       url,
