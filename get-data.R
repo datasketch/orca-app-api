@@ -75,6 +75,7 @@ get_data <- function(names_data) {
 
 #names_data <- 
 #names_data <- "Aprehensiones"
+dir.create("data/")
 l <- lapply(c("Inspecciones", "Aprehensiones"), function(nd) {
   df <- get_data(nd)
   readr::write_csv(df, paste0("data/", tolower(nd), ".csv"))
