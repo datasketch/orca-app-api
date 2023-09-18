@@ -15,19 +15,19 @@ get_data <- function(names_data) {
   
   end_p = Sys.Date()
   
-  data_save <- list(
-    "Inspecciones" = read_csv("data/inspecciones.csv"),
-    "Aprehensiones" = read_csv("data/aprehensiones.csv")
-  )
-  last_date <- NULL
-  if (names_data == "Inspecciones") {
-    last_date <- max(data_save[[names_data]]$fecha_inspeccion, na.rm = T) 
-  } else {
-  last_date <- max(data_save$Aprehensiones$fecha_acta, na.rm = T)
-  }
+  # data_save <- list(
+  #   "Inspecciones" = read_csv("data/inspecciones.csv"),
+  #   "Aprehensiones" = read_csv("data/aprehensiones.csv")
+  # )
+  # last_date <- NULL
+  # if (names_data == "Inspecciones") {
+  #   last_date <- max(data_save[[names_data]]$fecha_inspeccion, na.rm = T) 
+  # } else {
+  # last_date <- max(data_save$Aprehensiones$fecha_acta, na.rm = T)
+  # }
   
-  #url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2000-01-01&fechaFinal=', end_p)
-  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=',last_date,'&fechaFinal=', end_p)
+  url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=2000-01-01&fechaFinal=', end_p)
+  #url <- paste0('https://fondocuenta.fnd.org.co/ApiOrcaDS/api/', names_data, '?fechaInicial=',last_date,'&fechaFinal=', end_p)
   respose <-
     httr::GET(
       url,
@@ -40,9 +40,9 @@ get_data <- function(names_data) {
   
   
   
-  if (identical(result, list())) {
-    data <- data_save[[names_data]]
-  } else {
+  # if (identical(result, list())) {
+  #   data <- data_save[[names_data]]
+  # } else {
     if (names_data == "Inspecciones") {
       result$fecha_inspeccion <- lubridate::dmy(result$fecha_inspeccion)
       result$anio <- lubridate::year(result$fecha_inspeccion)
@@ -50,7 +50,7 @@ get_data <- function(names_data) {
       max(result$fecha_inspeccion)
       result$mcipio <- trimws(result$mcipio)
       result$depto[result$depto == "SAN ANDRES ISLAS"] <- "ARCHIPIELAGO DE SAN ANDRES, PROVIDENCIA Y SANTA CATALINA"
-      #readr::write_csv(result, "data/inspecciones.csv")
+      readr::write_csv(result, "data/inspecciones.csv")
     } else {
       result$fecha_acta <- lubridate::dmy(result$fecha_acta)
       result$anio <- lubridate::year(result$fecha_acta)
@@ -64,13 +64,13 @@ get_data <- function(names_data) {
       result$clase_producto[result$clase_producto %in% c("CERVEZA EXTRANJERA", "CERVEZA NACIONAL")] <- "CERVEZAS"
       result$cierre_establecimiento <- ifelse(result$cierre_establecimiento, "SÍ", "NO")
       result$depto[result$depto == "SAN ANDRES ISLAS"] <- "ARCHIPIELAGO DE SAN ANDRES, PROVIDENCIA Y SANTA CATALINA"
-      #readr::write_csv(result, "data/aprehensiones.csv")
-    }
-    data <- data_save[[names_data]] |> bind_rows(result)
+      readr::write_csv(result, "data/aprehensiones.csv")
+    # }
+    # data <- data_save[[names_data]] |> bind_rows(result)
     
   }
   
-  data
+  result
 }
 
 #names_data <- 
