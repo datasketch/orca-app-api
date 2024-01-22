@@ -80,7 +80,7 @@ ui <-  fluidPage(
                            ),
                            uiOutput("viz_extra"),
                            uiOutput("click_aprhtree")#,
-                          #verbatimTextOutput("test")
+                           #verbatimTextOutput("test")
                        )
                   )
               )
@@ -275,14 +275,16 @@ server <- function(input, output, session) {
     req(list_inputs())
     data <- data[[id_data()]]
     ls <- list_inputs()
+  
     if ("anio" %in% names(data)) {
       data$anio <- as.character(data$anio)
     }
-    df <- dsdataprep::data_filter(data = dplyr::as_tibble(data),
-                                  dic = dplyr::as_tibble(dic_load()),
+    
+    df <- dsdataprep::data_filter(data = data,
+                                  dic = dic_load(),
                                   var_inputs = ls,
                                   special_placeholder = NULL)
-   
+ 
     df
   })
   
@@ -325,6 +327,7 @@ server <- function(input, output, session) {
       var <- "depto"
       var_label <- "Departamento"
       if (actual_but$active %in% c("line", "bar")) {
+        df$anio <- as.character(df$anio)
         var <- "anio"
         var_label <- "Año"
         if (!is.null(input$anioId)) {
@@ -334,9 +337,12 @@ server <- function(input, output, session) {
           }
         }
         if (!is.null(input$deptosId)) {
-          var <- c("depto", var)
+          if (length(input$deptosId) > 1) {
+            var <- c("depto", var)
+          }
         }
       }
+      
       df <- dsdataprep::aggregation_data(df,
                                          agg = "count",
                                          agg_name = "conteo",
@@ -344,6 +350,7 @@ server <- function(input, output, session) {
                                          percentage = TRUE, 
                                          percentage_name = "porcentaje"
       )
+      
       df$porcentaje <- round(df$porcentaje, 2)
       #if (actual_but$active != "map") {
       if (ncol(df) == 3) {
@@ -365,9 +372,17 @@ server <- function(input, output, session) {
       var <- "depto"
       if (actual_but$active %in% c("line", "bar")) {
         var <- c("clase_producto", "anio")
+        
         if (!is.null(input$apre_anioId)) {
           if (length(input$apre_anioId) == 1) var <- c("clase_producto", "fecha_ym")
         }
+        if (actual_but$active == "line") {
+          if (is.null(input$apre_claseId)) {
+            var <- setdiff(var,"clase_producto")
+          }
+        }
+        # print("en aprehensiones")
+        # print(var)
         # if (!is.null(input$deptosId)) var <- c("depto", var)
       }
       
@@ -388,17 +403,28 @@ server <- function(input, output, session) {
                                          percentage = TRUE,
                                          percentage_name = "porcentaje"
       )
+      
       df$porcentaje <- round(df$porcentaje, 2)
+      #print(df)
       if (actual_but$active != "map") {
-        df$..labels <- paste0("Clase producto: ", df[[1]], 
-                              "<br/>Año: ", df[[2]], "<br/>",
-                              "Total", ": ",  sitools::f2si(df[[3]]), 
-                              "<br/>Porcentaje: ", df[[4]], "%")
+        if (actual_but$active == "line") {
+          if (is.null(input$apre_claseId)) {
+            df$..labels <- paste0("Año: ", df[[1]], "<br/>",
+                                  "Total", ": ",  sitools::f2si(df[[2]]), 
+                                  "<br/>Porcentaje: ", df[[3]], "%")
+          }
+        } else {
+          df$..labels <- paste0("Clase producto: ", df[[1]], 
+                                "<br/>Año: ", df[[2]], "<br/>",
+                                "Total", ": ",  sitools::f2si(df[[3]]), 
+                                "<br/>Porcentaje: ", df[[4]], "%")
+        }
       } else {
         df$..labels <- paste0("Departamento: ", df[[1]], 
                               "<br/>Total", ": ",  sitools::f2si(df[[2]]), 
                               "<br/>Porcentaje: ", df[[3]], "%")
       }
+      
     }
     # if ("code_depto" %in% names(df)) {
     #   df$code_depto <- sprintf("%02d", df$code_depto)
@@ -409,7 +435,6 @@ server <- function(input, output, session) {
     if ("anio" %in% names(df)) {
       df$anio <- as.character(df$anio)
     }
-    
     df
   })
   
@@ -422,6 +447,14 @@ server <- function(input, output, session) {
     if (nrow(data_viz()) == 0) return()
     type <- "DatNum"
     if (ncol(data_viz()) > 3) type <- "CatDatNum"
+ 
+    if (id_data() != "Inspecciones") {
+      if (actual_but$active == "line") {
+        if (is.null(input$apre_claseId)) {
+          type <- "DatNum"
+        }
+      }
+    }
     if (actual_but$active != "line") {
       type <- gsub("Dat", "Cat", type)
     }
@@ -435,7 +468,6 @@ server <- function(input, output, session) {
     #req(viz_type())
     viz <- paste0("hgchmagic::hgch_", actual_but$active, "_", viz_type())
     if (actual_but$active == "map") viz <- "ltgeo::lt_choropleth_GnmNum"
-    print(viz)
     viz
   })
   
@@ -927,9 +959,9 @@ server <- function(input, output, session) {
     dsmodules::downloadImageServer("download_tree_apreh", element = reactive(apreh_tree_down()), lib = "highcharter", formats = c("jpeg", "pdf", "png", "html"), file_prefix = "plot")
   })
   
-  output$test <- renderPrint({
-    input$map_extra_shape_click
-  })
+  # output$test <- renderPrint({
+  #   input$map_extra_shape_click
+  # })
   
 }
 
